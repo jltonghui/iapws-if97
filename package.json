@@ -1,0 +1,62 @@
+{
+  "name": "iapws-if97",
+  "version": "1.0.5",
+  "description": "TypeScript implementation of IAPWS-IF97 for water and steam properties, including forward/backward solvers, saturation states, and transport properties.",
+  "author": "jltonghui",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jltonghui/iapws-if97.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jltonghui/iapws-if97/issues"
+  },
+  "homepage": "https://github.com/jltonghui/iapws-if97#readme",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:standards": "vitest run tests/standards-asme tests/standards-cn",
+    "test:standards:asme": "vitest run tests/standards-asme",
+    "test:standards:cn": "vitest run tests/standards-cn",
+    "prepack": "npm run build && npm test",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^4.1.0",
+    "typescript": "^5.4.0",
+    "vitest": "^4.1.0"
+  },
+  "keywords": [
+    "iapws",
+    "if97",
+    "steam",
+    "water",
+    "thermodynamics",
+    "properties",
+    "engineering"
+  ],
+  "license": "MIT"
+}

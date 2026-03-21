@@ -5,7 +5,7 @@
  * - Thermal Conductivity (IAPWS 2011)
  * - Surface Tension (IAPWS 2014)
  * - Dielectric Constant (IAPWS 1997)
- * - Ionization Constant (IAPWS 2007)
+ * - Ionization Constant (IAPWS 2024)
  */
 
 import { Tc, Pc, RHOc } from '../constants.js';
@@ -228,7 +228,11 @@ function log10(x: number): number { return Math.log(x) / Math.LN10; }
  * @param T   Temperature [K]
  * @param rho Density [kg/m³]
  */
-export function ionizationConstant(T: number, rho: number): number {
+export function ionizationConstant(T: number, rho: number): number | null {
+  if (T < 273.15 || T > 1273.15) {
+    return null;
+  }
+
   const density = rho / 1000;
   const n = 6;
   const molarMass = 18.015268;

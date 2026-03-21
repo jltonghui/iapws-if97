@@ -4,7 +4,7 @@ import { region2 } from '../../src/regions/region2.js';
 import { region5 } from '../../src/regions/region5.js';
 import { saturationTemperature } from '../../src/regions/region4.js';
 import { detectRegionHS } from '../../src/core/region-detector.js';
-import { Region } from '../../src/types.js';
+import { Region, OutOfRangeError } from '../../src/types.js';
 import { solveHS } from '../../src/backward/hs.js';
 
 describe('detectRegionHS', () => {
@@ -106,5 +106,13 @@ describe('solveHS backward equations', () => {
     expect(back.region).toBe(Region.Region4);
     expect(back.quality).toBeGreaterThan(0.3);
     expect(back.quality).toBeLessThan(0.7);
+  });
+
+  it('throws OutOfRangeError when h is outside the supported range', () => {
+    expect(() => solveHS(1e9, 5)).toThrow(OutOfRangeError);
+  });
+
+  it('throws OutOfRangeError when s is outside the supported range', () => {
+    expect(() => solveHS(2000, 1e9)).toThrow(OutOfRangeError);
   });
 });

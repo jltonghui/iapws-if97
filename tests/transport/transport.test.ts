@@ -124,5 +124,9 @@ describe('Transport Properties', () => {
       expect(pKw).toBeGreaterThan(13);
       expect(pKw).toBeLessThan(15);
     });
+
+    it('returns null outside the released validity range', () => {
+      expect(ionizationConstant(1500, 10)).toBeNull();
+    });
   });
 });

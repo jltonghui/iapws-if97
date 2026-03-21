@@ -5,7 +5,7 @@
  */
 
 import type { BasicProperties, CoefficientTable } from '../types.js';
-import { Region, IF97Error } from '../types.js';
+import { Region, IF97Error, OutOfRangeError } from '../types.js';
 import * as C from '../constants.js';
 import { region1 } from '../regions/region1.js';
 import { region2 } from '../regions/region2.js';
@@ -168,6 +168,13 @@ const R3B_PS_V_TABLE: CoefficientTable = [
  * @param s - Specific entropy [kJ/(kg·K)]
  */
 export function solvePS(p: number, s: number): BasicProperties {
+  if (p < C.P_MIN || p > C.P_MAX) {
+    throw new OutOfRangeError('Pressure', p, C.P_MIN, C.P_MAX);
+  }
+  if (s < C.S_MIN || s > C.S_MAX) {
+    throw new OutOfRangeError('Entropy', s, C.S_MIN, C.S_MAX);
+  }
+
   const region = detectRegionPS(p, s);
 
   switch (region) {

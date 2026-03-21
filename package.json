@@ -1,6 +1,6 @@
 {
   "name": "iapws-if97",
-  "version": "1.0.5",
+  "version": "2.0.0",
   "description": "TypeScript implementation of IAPWS-IF97 for water and steam properties, including forward/backward solvers, saturation states, and transport properties.",
   "author": "jltonghui",
   "repository": {
@@ -19,10 +19,31 @@
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     },
+    "./transport": {
+      "import": "./dist/transport.js",
+      "types": "./dist/transport.d.ts"
+    },
+    "./regions": {
+      "import": "./dist/regions.js",
+      "types": "./dist/regions.d.ts"
+    },
+    "./saturation": {
+      "import": "./dist/saturation.js",
+      "types": "./dist/saturation.d.ts"
+    },
+    "./boundaries": {
+      "import": "./dist/boundaries.js",
+      "types": "./dist/boundaries.d.ts"
+    },
+    "./detect": {
+      "import": "./dist/detect.js",
+      "types": "./dist/detect.d.ts"
+    },
     "./package.json": "./package.json"
   },
   "files": [
     "dist",
+    "CHANGELOG.md",
     "LICENSE",
     "README.md"
   ],

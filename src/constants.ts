@@ -15,6 +15,9 @@ export const R = 0.461526;
 /** Critical temperature [K] */
 export const Tc = 647.096;
 
+/** Temperature exclusion half-band around the critical point [K] */
+export const CRITICAL_T_EXCLUSION_BAND = 1e-3;
+
 /** Critical pressure [MPa] */
 export const Pc = 22.064;
 
@@ -44,13 +47,13 @@ export const T_MAX = 2273.15;
 export const S_MIN = -0.00015454959194;
 
 /** Maximum specific entropy [kJ/(kg·K)] */
-export const S_MAX = 8.668866265157533;
+export const S_MAX = 13.904956083429227;
 
 /** Minimum specific enthalpy [kJ/kg] */
 export const H_MIN = -0.041587825987;
 
 /** Maximum specific enthalpy [kJ/kg] */
-export const H_MAX = 7365.802234015646;
+export const H_MAX = 7376.980263598506;
 
 // ─── Region 2 Boundaries ───────────────────────────────────────────────────
 

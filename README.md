@@ -1,8 +1,17 @@
 # `iapws-if97`
 
-IAPWS-IF97 (The International Association for the Properties of Water and Steam Industrial Formulation 1997) water/steam properties for Node.js and TypeScript.
+Industrial water and steam properties for Node.js and TypeScript, based on IAPWS-IF97 (The International Association for the Properties of Water and Steam - Industrial Formulation 1997).
 
-This library implements the industrial IAPWS-IF97 formulation for Regions 1 to 5, backward equations for `PH`, `PS`, and `HS`, saturation solvers for `Px` and `Tx`, and transport-property helpers commonly needed in engineering work. For the standards organization and official releases, see [IAPWS](https://www.iapws.org/).
+`iapws-if97` provides forward and backward state solvers, saturation solvers, and transport-property helpers for engineering calculations involving water and steam. For the standards organization and official releases, see [IAPWS](https://www.iapws.org/).
+
+## Features
+
+- IF97 Regions 1 to 5, including Region 5 high-temperature support
+- Forward, backward, and saturation solvers from a consistent public API
+- Transport properties including viscosity, thermal conductivity, surface tension, dielectric constant, and ionization constant
+- Typed ESM package with bundled declarations
+- `2.0` export split: root import for main solvers, subpaths for advanced helpers
+- Verified against IAPWS tables and published engineering references
 
 ## Project Origin
 
@@ -10,56 +19,58 @@ This library implements the industrial IAPWS-IF97 formulation for Regions 1 to 5
 
 <p align="right">-- Retired Thermodynamic Engineer, Shuping</p>
 
-## Features
-
-- Forward solver: `solvePT(p, T)`
-- Backward solvers: `solvePH(p, h)`, `solvePS(p, s)`, `solveHS(h, s)`
-- Saturation solvers: `solvePx(p, x)`, `solveTx(T, x)`
-- Unified dispatcher: `solve({ mode, ... })`
-- Region-level advanced APIs for direct access and verification
-- TypeScript declarations included
-- Verified against IAPWS reference tables and supplementary releases
-
 ## Installation
 
 ```bash
 npm install iapws-if97
 ```
 
-## Usage
-
-### Basic `PT` solve
-
-Use pressure and temperature as inputs to calculate a thermodynamic state.
+## Quick Start
 
 ```ts
-import { solvePT } from 'iapws-if97';
+import { solve, solvePT, solvePx } from 'iapws-if97';
 
-const state = solvePT(3, 300);
-console.log(state.enthalpy); // kJ/kg
+const a = solvePT(3, 300);
+const b = solve({ mode: 'PH', p: 3, h: a.enthalpy });
+const c = solvePx(1, 0.5);
+
+console.log(a.enthalpy);   // kJ/kg
+console.log(b.temperature); // K
+console.log(c.quality);     // 0.5
 ```
 
-### Backward `PH` solve
+## Main API
 
-Use pressure and enthalpy to recover the corresponding state, for example when enthalpy is already known from measurement or a previous calculation.
+- `solvePT(p, T)` // `MPa`, `K`
+- `solvePH(p, h)` // `MPa`, `kJ/kg`
+- `solvePS(p, s)` // `MPa`, `kJ/(kg·K)`
+- `solveHS(h, s)` // `kJ/kg`, `kJ/(kg·K)`
+- `solveTH(T, h)` // `K`, `kJ/kg`
+- `solveTS(T, s)` // `K`, `kJ/(kg·K)`
+- `solvePx(p, x)` // `MPa`, quality `[0, 1]`
+- `solveTx(T, x)` // `K`, quality `[0, 1]`
+- `solve(input)` // same units as the selected `mode`
+
+Use `solve({ mode, ... })` when the input pair varies at runtime:
 
 ```ts
-import { solvePT, solvePH } from 'iapws-if97';
+import { solve } from 'iapws-if97';
 
-const state = solvePT(3, 300);
-const fromPH = solvePH(3, state.enthalpy);
-console.log(fromPH.temperature); // K
+const state = solve({ mode: 'PT', p: 16, T: 823.15 });
 ```
 
-### Saturation `Px` solve
-
-Use pressure and vapor quality to calculate a saturated liquid-vapor mixture state.
+Supported `mode`:
 
 ```ts
-import { solvePx } from 'iapws-if97';
-
-const wetSteam = solvePx(1, 0.5);
-console.log(wetSteam.quality); // 0.5
+type SolveInput =
+  | { mode: 'PT'; p: number; T: number }
+  | { mode: 'PH'; p: number; h: number }
+  | { mode: 'PS'; p: number; s: number }
+  | { mode: 'HS'; h: number; s: number }
+  | { mode: 'Px'; p: number; x: number }
+  | { mode: 'Tx'; T: number; x: number }
+  | { mode: 'TH'; T: number; h: number }
+  | { mode: 'TS'; T: number; s: number };
 ```
 
 ## Solver Return Value
@@ -85,7 +96,7 @@ type SteamState = {
   thermalConductivity: number;
   surfaceTension: number | null;
   dielectricConstant: number;
-  ionizationConstant: number;
+  ionizationConstant: number | null;
   isobaricExpansion: number | null;
   isothermalCompressibility: number | null;
 };
@@ -97,6 +108,7 @@ Notes:
 - In two-phase mixture states (`0 < x < 1`), `cp`, `cv`, `speedOfSound`, `isobaricExpansion`, and `isothermalCompressibility` return `null`.
 - `surfaceTension` is only returned on Region 4 saturation states below the critical point. In bulk single-phase states it returns `null`.
 - `density` is included directly, so you do not need to invert `specificVolume` yourself.
+- `ionizationConstant` is returned as `null` outside the released IAPWS validity range for that correlation.
 
 ## Units
 
@@ -118,50 +130,47 @@ Notes:
 
 Fields documented as `number | null` return `null` when the property is not defined for the requested state.
 
-## API
+## Advanced Imports
 
-### Main solvers
+The package root is intentionally limited to the main solver API, core types, and error classes.
+Lower-level helpers are available from dedicated subpaths:
 
-- `solvePT(p, T)`
-- `solvePH(p, h)`
-- `solvePS(p, s)`
-- `solveHS(h, s)`
-- `solvePx(p, x)`
-- `solveTx(T, x)`
-- `solve(input)`
+- `iapws-if97/transport`: `viscosity`, `thermalConductivity`, `surfaceTension`, `dielectricConstant`, `ionizationConstant`
+- `iapws-if97/regions`: `region1`, `region2`, `region3ByRhoT`, `region5`
+- `iapws-if97/saturation`: `saturationPressure`, `saturationTemperature`
+- `iapws-if97/boundaries`: `boundary23_T_to_P`, `boundary23_P_to_T`, `region3Volume`, `region3SatVolume`
+- `iapws-if97/detect`: `detectRegionPT`, `detectRegionPH`, `detectRegionPS`, `detectRegionHS`, `detectRegionTH`, `detectRegionTS`
 
-### Unified dispatcher
-
-Use `solve({ mode, ... })` when your inputs vary by calculation path.
+Examples:
 
 ```ts
-import { solve } from 'iapws-if97';
-
-const a = solve({ mode: 'PT', p: 16, T: 823.15 });
-const b = solve({ mode: 'PH', p: 10, h: 2800 });
-const c = solve({ mode: 'PS', p: 10, s: 6.5 });
-const d = solve({ mode: 'HS', h: 2800, s: 6.1 });
-const e = solve({ mode: 'Px', p: 1, x: 0.2 });
-const f = solve({ mode: 'Tx', T: 453.15, x: 0.8 });
+import { viscosity } from 'iapws-if97/transport';
+import { region1 } from 'iapws-if97/regions';
+import { saturationTemperature } from 'iapws-if97/saturation';
+import { detectRegionPT } from 'iapws-if97/detect';
 ```
 
-### Advanced exports
+## Migration to 2.0
 
-- Region functions: `region1`, `region2`, `region3ByRhoT`, `region5`
-- Saturation helpers: `saturationPressure`, `saturationTemperature`
-- Boundary helpers: `boundary23_T_to_P`, `boundary23_P_to_T`, `region3Volume`, `region3SatVolume`
-- Transport properties: `viscosity`, `thermalConductivity`, `surfaceTension`, `dielectricConstant`, `ionizationConstant`
-- Region detection: `detectRegionPT`, `detectRegionPH`, `detectRegionPS`, `detectRegionHS`
+Version `2.0.0` narrows the root export surface to the main solver API.
+If you imported lower-level helpers from the package root in `1.x`, move them to subpath imports:
 
-### Advanced usage notes
+- `import { viscosity } from 'iapws-if97'` → `import { viscosity } from 'iapws-if97/transport'`
+- `import { region1 } from 'iapws-if97'` → `import { region1 } from 'iapws-if97/regions'`
+- `import { saturationTemperature } from 'iapws-if97'` → `import { saturationTemperature } from 'iapws-if97/saturation'`
+- `import { detectRegionPT } from 'iapws-if97'` → `import { detectRegionPT } from 'iapws-if97/detect'`
+
+## Advanced Usage Notes
 
 - `region1`, `region2`, `region3ByRhoT`, and `region5` return core thermodynamic properties without transport-property enrichment.
 - `detectRegion*` helpers return a `Region` enum value or `-1` when the input pair is outside IF97 validity.
-- `viscosity(T, rho)`, `dielectricConstant(T, rho)`, and `ionizationConstant(T, rho)` require temperature and density, not a `SteamState`.
+- `viscosity(T, rho)` and `dielectricConstant(T, rho)` require temperature and density, not a `SteamState`.
+- `ionizationConstant(T, rho)` also requires temperature and density, and returns `null` outside its released validity range.
 - `thermalConductivity(T, rho, cp?, cv?, drhodP_T?, mu?)` supports two levels:
   - minimal call: base conductivity from `T` and `rho`
   - full call: include `cp`, `cv`, `drhodP_T`, and `mu` to evaluate the IAPWS 2011 critical-enhancement term
 - `surfaceTension(T)` returns `null` outside its valid temperature range and should be interpreted as a saturation-line property.
+- `solveTH(T, h)` prefers the compressed-liquid branch when a subcritical liquid state and a two-phase state are both thermodynamically possible at the same `T` and `h`; exact saturation endpoints still return Region 4 metadata.
 
 ## Errors and Limits
 
@@ -174,8 +183,10 @@ The library throws typed errors from the public API:
 Typical boundary rules:
 
 - `solvePT(p, T)` supports the IF97 industrial range up to `100 MPa` and `2273.15 K`, with Region 5 limited to `50 MPa`.
+- The exact critical point (`22.064 MPa`, `647.096 K`) is rejected with `IF97Error` because derivative properties are singular there.
 - `solvePx(p, x)` is only valid on the saturation line for `Pt <= p <= Pc`.
 - `solveTx(T, x)` is only valid on the saturation line for `273.15 K <= T <= Tc`.
+- `solveTH(T, h)` and `solveTS(T, s)` currently support Region 1 to Region 5. Inputs within `0.001 K` of the critical-point temperature are rejected conservatively with `IF97Error`.
 - `x` must be in `[0, 1]` for two-phase calculations.
 - Properties that are not defined for the requested state are returned as `null`, not `NaN`.
 
@@ -192,6 +203,7 @@ The test suite includes:
 
 - Official IF97 verification tables for Regions 1 to 5
 - Backward-equation round trips
+- Temperature-led backward round trips for `TH` and `TS`
 - High-pressure Region 4 regression tests
 - IAPWS R11-24 ionization-constant verification values
 - Coverage thresholds enforced in CI-style local runs

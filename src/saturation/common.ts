@@ -1,3 +1,10 @@
+/**
+ * Saturation-line utilities.
+ *
+ * Computes saturated liquid / vapour endpoint properties along the
+ * two-phase boundary, and provides helpers for quality interpolation
+ * and two-phase mixing.
+ */
 import type { BasicProperties } from '../types.js';
 import { Region } from '../types.js';
 import { Pc, R2_T_MIN, RHOc } from '../constants.js';
@@ -8,6 +15,7 @@ import { saturationPressure, saturationTemperature } from '../regions/region4.js
 import { region3SatVolume } from '../regions/region3-subregions.js';
 import { newtonRaphson } from '../solvers/newton-raphson.js';
 
+/** Saturated liquid and vapour properties at a given saturation state. */
 export interface SaturationEndpoints {
   pressure: number;
   temperature: number;
@@ -15,10 +23,18 @@ export interface SaturationEndpoints {
   vapor: BasicProperties;
 }
 
+/** Tag a single-phase state as Region 4 with the given vapour quality. */
 function withRegion4Metadata(state: BasicProperties, quality: number): BasicProperties {
   return { ...state, region: Region.Region4, quality };
 }
 
+/**
+ * Iteratively solve for Region 3 density at saturation.
+ *
+ * @param p - Saturation pressure [MPa]
+ * @param T - Saturation temperature [K]
+ * @param x - Phase indicator: 0 = liquid, 1 = vapour
+ */
 function solveR3Density(p: number, T: number, x: 0 | 1): number {
   const v0 = region3SatVolume(p, T, x);
   return newtonRaphson(
@@ -27,12 +43,21 @@ function solveR3Density(p: number, T: number, x: 0 | 1): number {
   );
 }
 
+/** Clamp vapour quality to [0, 1], snapping near-zero/one values to the boundary. */
 function clampQuality(x: number): number {
-  if (x <= 0 && x > -1e-12) return 0;
-  if (x >= 1 && x < 1 + 1e-12) return 1;
+  if (x <= 1e-12) return 0;
+  if (x >= 1 - 1e-12) return 1;
   return Math.max(0, Math.min(1, x));
 }
 
+/**
+ * Compute saturated liquid and vapour properties at a given pressure.
+ *
+ * Below 623.15 K the saturation line lies in Regions 1/2; above it,
+ * both phases are in Region 3 and require density iteration.
+ *
+ * @param p - Saturation pressure [MPa]
+ */
 export function saturationEndpointsAtPressure(p: number): SaturationEndpoints {
   const temperature = saturationTemperature(p);
 
@@ -58,10 +83,23 @@ export function saturationEndpointsAtPressure(p: number): SaturationEndpoints {
   };
 }
 
+/**
+ * Compute saturated liquid and vapour properties at a given temperature.
+ * @param T - Saturation temperature [K]
+ */
 export function saturationEndpointsAtTemperature(T: number): SaturationEndpoints {
   return saturationEndpointsAtPressure(saturationPressure(T));
 }
 
+/**
+ * Compute vapour quality from any extensive saturation property.
+ *
+ * x = (mixture − liquid) / (vapour − liquid)
+ *
+ * @param liquidValue  - Property value at saturated liquid
+ * @param vaporValue   - Property value at saturated vapour
+ * @param mixtureValue - Property value of the two-phase mixture
+ */
 export function qualityFromSaturationProperty(
   liquidValue: number,
   vaporValue: number,
@@ -70,6 +108,15 @@ export function qualityFromSaturationProperty(
   return clampQuality((mixtureValue - liquidValue) / (vaporValue - liquidValue));
 }
 
+/**
+ * Linearly mix saturated liquid and vapour properties at a given quality.
+ *
+ * At x = 0 or x = 1 the pure endpoint is returned directly (preserving
+ * cp, cv, etc.). For 0 < x < 1, single-phase-only properties are set to null.
+ *
+ * @param endpoints    - Saturated liquid/vapour properties
+ * @param qualityInput - Vapour quality (0–1)
+ */
 export function mixSaturationState(
   endpoints: SaturationEndpoints,
   qualityInput: number,

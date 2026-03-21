@@ -8,7 +8,7 @@
  */
 
 import type { BasicProperties, CoefficientTable } from '../types.js';
-import { Region, IF97Error } from '../types.js';
+import { Region, IF97Error, OutOfRangeError } from '../types.js';
 import * as C from '../constants.js';
 import { region1 } from '../regions/region1.js';
 import { region2 } from '../regions/region2.js';
@@ -208,6 +208,13 @@ function r4Ths(h: number, s: number): number {
  * @param s - Specific entropy [kJ/(kg·K)]
  */
 export function solveHS(h: number, s: number): BasicProperties {
+  if (h < C.H_MIN || h > C.H_MAX) {
+    throw new OutOfRangeError('Enthalpy', h, C.H_MIN, C.H_MAX);
+  }
+  if (s < C.S_MIN || s > C.S_MAX) {
+    throw new OutOfRangeError('Entropy', s, C.S_MIN, C.S_MAX);
+  }
+
   const region = detectRegionHS(h, s);
 
   switch (region) {

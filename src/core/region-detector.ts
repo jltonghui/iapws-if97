@@ -7,8 +7,10 @@ import { boundary23_P_to_T, boundary23_T_to_P } from '../regions/boundaries.js';
 import { region1 } from '../regions/region1.js';
 import { region2 } from '../regions/region2.js';
 import { region5 } from '../regions/region5.js';
-import type { CoefficientTable } from '../types.js';
+import { saturationEndpointsAtTemperature } from '../saturation/common.js';
+import type { BasicProperties, CoefficientTable } from '../types.js';
 import { Region } from '../types.js';
+import { solveRegion3PTBasic } from './region3-pt.js';
 
 /**
  * Detect the IAPWS-IF97 region for given P and T.
@@ -87,6 +89,223 @@ export function detectRegionPS(p: number, s: number): Region | -1 {
     if (s25 < s && p <= 50) return Region.Region5;
   }
   return -1;
+}
+
+// ─── T-H / T-S Region Detection Helpers ─────────────────────────────────────
+
+type PropertyKey = 'enthalpy' | 'entropy';
+
+/** Extract enthalpy or entropy from a BasicProperties object. */
+function propertyOf(state: BasicProperties, property: PropertyKey): number {
+  return property === 'enthalpy' ? state.enthalpy : state.entropy;
+}
+
+/** Check whether value lies within [min(a,b), max(a,b)] with relative tolerance. */
+function inRange(value: number, a: number, b: number): boolean {
+  const tolerance = 1e-9 * Math.max(1, Math.abs(a), Math.abs(b), Math.abs(value));
+  return value >= Math.min(a, b) - tolerance && value <= Math.max(a, b) + tolerance;
+}
+
+/** Check approximate equality with relative tolerance. */
+function isClose(a: number, b: number): boolean {
+  return Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(a), Math.abs(b));
+}
+
+/**
+ * Generic region detector for temperature + (enthalpy or entropy) inputs.
+ *
+ * Walks through the IAPWS-IF97 temperature ranges (Region 5 → supercritical →
+ * sub-critical) and checks whether the given property value falls within each
+ * region's bounds at the specified temperature.
+ *
+ * @param T        - Temperature [K]
+ * @param value    - Specific enthalpy [kJ/kg] or specific entropy [kJ/(kg·K)]
+ * @param property - Which property `value` represents
+ * @returns Region number (1–5) or -1 if out of range
+ */
+function detectRegionByTemperatureProperty(
+  T: number,
+  value: number,
+  property: PropertyKey,
+): Region | -1 {
+  if (T < C.T_MIN || T > C.T_MAX) {
+    return -1;
+  }
+
+  if (T > C.R5_T_MIN) {
+    return inRange(
+      value,
+      propertyOf(region5(C.P_MIN, T), property),
+      propertyOf(region5(C.R5_P_MAX, T), property),
+    )
+      ? Region.Region5
+      : -1;
+  }
+
+  if (T > C.B23_T_MAX) {
+    return inRange(
+      value,
+      propertyOf(region2(C.P_MIN, T), property),
+      propertyOf(region2(C.P_MAX, T), property),
+    )
+      ? Region.Region2
+      : -1;
+  }
+
+  if (T > C.Tc) {
+    const p23 = boundary23_T_to_P(T);
+    if (inRange(
+      value,
+      propertyOf(region2(C.P_MIN, T), property),
+      propertyOf(region2(p23, T), property),
+    )) {
+      return Region.Region2;
+    }
+
+    return inRange(
+      value,
+      propertyOf(solveRegion3PTBasic(p23, T), property),
+      propertyOf(solveRegion3PTBasic(C.P_MAX, T), property),
+    )
+      ? Region.Region3
+      : -1;
+  }
+
+  const endpoints = saturationEndpointsAtTemperature(T);
+  const liquidProperty = propertyOf(endpoints.liquid, property);
+  const vaporProperty = propertyOf(endpoints.vapor, property);
+
+  if (inRange(value, liquidProperty, vaporProperty)) {
+    return Region.Region4;
+  }
+
+  if (T <= C.R2_T_MIN && inRange(
+    value,
+    liquidProperty,
+    propertyOf(region1(C.P_MAX, T), property),
+  )) {
+    return Region.Region1;
+  }
+
+  if (T > C.R2_T_MIN && inRange(
+    value,
+    liquidProperty,
+    propertyOf(solveRegion3PTBasic(C.P_MAX, T), property),
+  )) {
+    return Region.Region3;
+  }
+
+  return inRange(
+    value,
+    vaporProperty,
+    propertyOf(region2(C.P_MIN, T), property),
+  )
+    ? Region.Region2
+    : -1;
+}
+
+/**
+ * Detect the IAPWS-IF97 region for given T and H.
+ *
+ * Uses explicit enthalpy comparisons (including saturation-boundary proximity
+ * checks via `isClose`) rather than the generic helper, because enthalpy is
+ * not monotonic across regions at some temperatures.
+ *
+ * @param T - Temperature [K]
+ * @param h - Specific enthalpy [kJ/kg]
+ * @returns Region number (1–5) or -1 if out of range
+ */
+export function detectRegionTH(T: number, h: number): Region | -1 {
+  if (T < C.T_MIN || T > C.T_MAX) {
+    return -1;
+  }
+
+  if (T > C.R5_T_MIN) {
+    return inRange(
+      h,
+      region5(C.P_MIN, T).enthalpy,
+      region5(C.R5_P_MAX, T).enthalpy,
+    )
+      ? Region.Region5
+      : -1;
+  }
+
+  if (T > C.B23_T_MAX) {
+    return inRange(
+      h,
+      region2(C.P_MIN, T).enthalpy,
+      region2(C.P_MAX, T).enthalpy,
+    )
+      ? Region.Region2
+      : -1;
+  }
+
+  if (T > C.Tc) {
+    const p23 = boundary23_T_to_P(T);
+    if (inRange(
+      h,
+      region2(C.P_MIN, T).enthalpy,
+      region2(p23, T).enthalpy,
+    )) {
+      return Region.Region2;
+    }
+
+    return inRange(
+      h,
+      solveRegion3PTBasic(p23, T).enthalpy,
+      solveRegion3PTBasic(C.P_MAX, T).enthalpy,
+    )
+      ? Region.Region3
+      : -1;
+  }
+
+  const endpoints = saturationEndpointsAtTemperature(T);
+  const hf = endpoints.liquid.enthalpy;
+  const hg = endpoints.vapor.enthalpy;
+
+  // Exact saturation boundary: snap to Region 4 immediately.
+  if (isClose(h, hf) || isClose(h, hg)) {
+    return Region.Region4;
+  }
+
+  // Compressed liquid / supercritical fluid checks MUST come before the
+  // general two-phase dome check. Compressed liquid enthalpy is slightly
+  // above hf, so it falls within [hf, hg] — checking R4 first would
+  // misclassify compressed liquid states.
+  //
+  // For T > 623.15 K (near Tc), enthalpy decreases with pressure in R3,
+  // so the R3 range [h_R3_max, hf] does NOT overlap the dome [hf, hg],
+  // and the R4 fallback below correctly catches two-phase states.
+  if (T <= C.R2_T_MIN && inRange(h, hf, region1(C.P_MAX, T).enthalpy)) {
+    return Region.Region1;
+  }
+
+  if (T > C.R2_T_MIN && inRange(h, hf, solveRegion3PTBasic(C.P_MAX, T).enthalpy)) {
+    return Region.Region3;
+  }
+
+  // Remaining enthalpy values in the dome are two-phase.
+  if (inRange(h, hf, hg)) {
+    return Region.Region4;
+  }
+
+  return inRange(h, hg, region2(C.P_MIN, T).enthalpy)
+    ? Region.Region2
+    : -1;
+}
+
+/**
+ * Detect the IAPWS-IF97 region for given T and S.
+ *
+ * Delegates to the generic temperature-property detector since entropy
+ * is monotonic across regions at fixed temperature.
+ *
+ * @param T - Temperature [K]
+ * @param s - Specific entropy [kJ/(kg·K)]
+ * @returns Region number (1–5) or -1 if out of range
+ */
+export function detectRegionTS(T: number, s: number): Region | -1 {
+  return detectRegionByTemperatureProperty(T, s, 'entropy');
 }
 
 // ─── H-S Boundary Helper Functions ──────────────────────────────────────────

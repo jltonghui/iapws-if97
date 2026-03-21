@@ -63,8 +63,8 @@ export interface SteamState {
   surfaceTension: number | null;
   /** Static dielectric constant [dimensionless] */
   dielectricConstant: number;
-  /** Ionization constant pKw [dimensionless] */
-  ionizationConstant: number;
+  /** Ionization constant pKw [dimensionless], null outside released validity range */
+  ionizationConstant: number | null;
 
   // ── Derivative Properties ─────────────────────────────────────────────
 
@@ -99,7 +99,7 @@ export interface BasicProperties {
 // ─── Input Modes ────────────────────────────────────────────────────────────
 
 /** Supported thermodynamic input combinations */
-export type InputMode = 'PT' | 'PH' | 'PS' | 'HS' | 'Px' | 'Tx';
+export type InputMode = 'PT' | 'PH' | 'PS' | 'HS' | 'Px' | 'Tx' | 'TH' | 'TS';
 
 /** Input for pressure-temperature calculation */
 export interface PTInput {
@@ -155,8 +155,26 @@ export interface TxInput {
   x: number;
 }
 
+/** Input for temperature-enthalpy calculation */
+export interface THInput {
+  mode: 'TH';
+  /** Temperature [K] */
+  T: number;
+  /** Specific enthalpy [kJ/kg] */
+  h: number;
+}
+
+/** Input for temperature-entropy calculation */
+export interface TSInput {
+  mode: 'TS';
+  /** Temperature [K] */
+  T: number;
+  /** Specific entropy [kJ/(kg·K)] */
+  s: number;
+}
+
 /** Union of all valid inputs */
-export type SolveInput = PTInput | PHInput | PSInput | HSInput | PxInput | TxInput;
+export type SolveInput = PTInput | PHInput | PSInput | HSInput | PxInput | TxInput | THInput | TSInput;
 
 // ─── Coefficient Table ──────────────────────────────────────────────────────
 

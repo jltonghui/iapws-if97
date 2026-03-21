@@ -8,7 +8,7 @@
  */
 
 import type { BasicProperties, CoefficientTable } from '../types.js';
-import { Region, IF97Error } from '../types.js';
+import { Region, IF97Error, OutOfRangeError } from '../types.js';
 import * as C from '../constants.js';
 import { region1 } from '../regions/region1.js';
 import { region2 } from '../regions/region2.js';
@@ -215,6 +215,13 @@ export function r4EnthalpyToPsat(h: number): number {
  * @param h - Specific enthalpy [kJ/kg]
  */
 export function solvePH(p: number, h: number): BasicProperties {
+  if (p < C.P_MIN || p > C.P_MAX) {
+    throw new OutOfRangeError('Pressure', p, C.P_MIN, C.P_MAX);
+  }
+  if (h < C.H_MIN || h > C.H_MAX) {
+    throw new OutOfRangeError('Enthalpy', h, C.H_MIN, C.H_MAX);
+  }
+
   const region = detectRegionPH(p, h);
 
   switch (region) {

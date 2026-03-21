@@ -101,77 +101,50 @@ export interface BasicProperties {
 /** Supported thermodynamic input combinations */
 export type InputMode = 'PT' | 'PH' | 'PS' | 'HS' | 'Px' | 'Tx' | 'TH' | 'TS';
 
+// Allow either the engineering shorthand or the long-form field name.
+type AliasNumberField<Short extends string, Long extends string> =
+  | ({ [K in Short]: number } & { [K in Long]?: number })
+  | ({ [K in Short]?: number } & { [K in Long]: number });
+
 /** Input for pressure-temperature calculation */
-export interface PTInput {
+export type PTInput = {
   mode: 'PT';
-  /** Pressure [MPa] */
-  p: number;
-  /** Temperature [K] */
-  T: number;
-}
+} & AliasNumberField<'p', 'pressure'> & AliasNumberField<'T', 'temperature'>;
 
 /** Input for pressure-enthalpy calculation */
-export interface PHInput {
+export type PHInput = {
   mode: 'PH';
-  /** Pressure [MPa] */
-  p: number;
-  /** Specific enthalpy [kJ/kg] */
-  h: number;
-}
+} & AliasNumberField<'p', 'pressure'> & AliasNumberField<'h', 'enthalpy'>;
 
 /** Input for pressure-entropy calculation */
-export interface PSInput {
+export type PSInput = {
   mode: 'PS';
-  /** Pressure [MPa] */
-  p: number;
-  /** Specific entropy [kJ/(kg·K)] */
-  s: number;
-}
+} & AliasNumberField<'p', 'pressure'> & AliasNumberField<'s', 'entropy'>;
 
 /** Input for enthalpy-entropy calculation */
-export interface HSInput {
+export type HSInput = {
   mode: 'HS';
-  /** Specific enthalpy [kJ/kg] */
-  h: number;
-  /** Specific entropy [kJ/(kg·K)] */
-  s: number;
-}
+} & AliasNumberField<'h', 'enthalpy'> & AliasNumberField<'s', 'entropy'>;
 
 /** Input for pressure-quality (saturation) calculation */
-export interface PxInput {
+export type PxInput = {
   mode: 'Px';
-  /** Pressure [MPa] */
-  p: number;
-  /** Vapour quality (0–1) */
-  x: number;
-}
+} & AliasNumberField<'p', 'pressure'> & AliasNumberField<'x', 'quality'>;
 
 /** Input for temperature-quality (saturation) calculation */
-export interface TxInput {
+export type TxInput = {
   mode: 'Tx';
-  /** Temperature [K] */
-  T: number;
-  /** Vapour quality (0–1) */
-  x: number;
-}
+} & AliasNumberField<'T', 'temperature'> & AliasNumberField<'x', 'quality'>;
 
 /** Input for temperature-enthalpy calculation */
-export interface THInput {
+export type THInput = {
   mode: 'TH';
-  /** Temperature [K] */
-  T: number;
-  /** Specific enthalpy [kJ/kg] */
-  h: number;
-}
+} & AliasNumberField<'T', 'temperature'> & AliasNumberField<'h', 'enthalpy'>;
 
 /** Input for temperature-entropy calculation */
-export interface TSInput {
+export type TSInput = {
   mode: 'TS';
-  /** Temperature [K] */
-  T: number;
-  /** Specific entropy [kJ/(kg·K)] */
-  s: number;
-}
+} & AliasNumberField<'T', 'temperature'> & AliasNumberField<'s', 'entropy'>;
 
 /** Union of all valid inputs */
 export type SolveInput = PTInput | PHInput | PSInput | HSInput | PxInput | TxInput | THInput | TSInput;

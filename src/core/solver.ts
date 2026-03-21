@@ -10,6 +10,7 @@ import { region2 } from '../regions/region2.js';
 import { region5 } from '../regions/region5.js';
 import { detectRegionPT } from './region-detector.js';
 import { solveRegion3PTBasic } from './region3-pt.js';
+import { normalizeSolveInput } from './solve-input-normalization.js';
 import { viscosity, thermalConductivity, surfaceTension, dielectricConstant, ionizationConstant } from '../transport/properties.js';
 import { solvePH } from '../backward/ph.js';
 import { solvePS } from '../backward/ps.js';
@@ -93,18 +94,21 @@ export function solvePT(p: number, T: number): SteamState {
 
 /**
  * Unified solver: compute full thermodynamic state from any supported input pair.
- * Routes to the correct solver based on input mode, enriches with transport properties.
+ * Routes to the correct solver based on input mode, enriches with transport properties,
+ * and accepts either shorthand or long-form input field names.
  */
 export function solve(input: SolveInput): SteamState {
-  switch (input.mode) {
-    case 'PT': return solvePT(input.p, input.T);
-    case 'PH': return enrichState(solvePH(input.p, input.h));
-    case 'PS': return enrichState(solvePS(input.p, input.s));
-    case 'HS': return enrichState(solveHS(input.h, input.s));
-    case 'Px': return enrichState(solvePx(input.p, input.x));
-    case 'Tx': return enrichState(solveTx(input.T, input.x));
-    case 'TH': return enrichState(solveTH(input.T, input.h));
-    case 'TS': return enrichState(solveTS(input.T, input.s));
+  const normalized = normalizeSolveInput(input);
+
+  switch (normalized.mode) {
+    case 'PT': return solvePT(normalized.p, normalized.T);
+    case 'PH': return enrichState(solvePH(normalized.p, normalized.h));
+    case 'PS': return enrichState(solvePS(normalized.p, normalized.s));
+    case 'HS': return enrichState(solveHS(normalized.h, normalized.s));
+    case 'Px': return enrichState(solvePx(normalized.p, normalized.x));
+    case 'Tx': return enrichState(solveTx(normalized.T, normalized.x));
+    case 'TH': return enrichState(solveTH(normalized.T, normalized.h));
+    case 'TS': return enrichState(solveTS(normalized.T, normalized.s));
     default:
       throw new IF97Error(`Unsupported solve mode: ${(input as { mode?: unknown }).mode ?? 'undefined'}`);
   }

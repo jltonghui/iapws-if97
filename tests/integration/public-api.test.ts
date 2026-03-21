@@ -5,6 +5,7 @@ import * as regions from '../../src/regions.js';
 import * as saturation from '../../src/saturation.js';
 import * as boundaries from '../../src/boundaries.js';
 import * as detect from '../../src/detect.js';
+import { region1 } from '../../src/regions/region1.js';
 
 describe('public API surface', () => {
   it('keeps the root export focused on main solver APIs', () => {
@@ -69,5 +70,27 @@ describe('public API surface', () => {
       'detectRegionTH',
       'detectRegionTS',
     ]);
+  });
+});
+
+describe('public API normalization', () => {
+  it('snaps floating-point noise at integer round-trip boundaries for solve()', () => {
+    const forward = root.solvePT(3, 300);
+    const backward = root.solve({ mode: 'PH', p: 3, h: forward.enthalpy });
+
+    expect(backward.temperature).toBe(300);
+  });
+
+  it('snaps floating-point noise at integer round-trip boundaries for direct solvePH()', () => {
+    const forward = root.solvePT(3, 300);
+    const backward = root.solvePH(3, forward.enthalpy);
+
+    expect(backward.temperature).toBe(300);
+  });
+
+  it('preserves non-noise values', () => {
+    const state = root.solvePT(3, 300);
+
+    expect(state.enthalpy).toBe(region1(3, 300).enthalpy);
   });
 });

@@ -77,9 +77,20 @@ describe('solve() unified dispatcher', () => {
     expect(state.region).toBe(Region.Region1);
   });
 
+  it('accepts PT long-form aliases', () => {
+    const state = solve({ mode: 'PT', pressure: 3, temperature: 300 });
+    expect(state.region).toBe(Region.Region1);
+  });
+
   it('routes PH input', () => {
     const fwd = region1(3, 300);
     const state = solve({ mode: 'PH', p: 3, h: fwd.enthalpy });
+    expect(state.temperature).toBeCloseTo(300, 0);
+  });
+
+  it('accepts PH long-form aliases', () => {
+    const fwd = region1(3, 300);
+    const state = solve({ mode: 'PH', pressure: 3, enthalpy: fwd.enthalpy });
     expect(state.temperature).toBeCloseTo(300, 0);
   });
 
@@ -89,9 +100,21 @@ describe('solve() unified dispatcher', () => {
     expect(state.temperature).toBeCloseTo(300, 0);
   });
 
+  it('accepts PS long-form aliases', () => {
+    const fwd = region1(3, 300);
+    const state = solve({ mode: 'PS', pressure: 3, entropy: fwd.entropy });
+    expect(state.temperature).toBeCloseTo(300, 0);
+  });
+
   it('routes HS input', () => {
     const fwd = region2(0.0035, 300);
     const state = solve({ mode: 'HS', h: fwd.enthalpy, s: fwd.entropy });
+    expect(state.temperature).toBeCloseTo(300, 0);
+  });
+
+  it('accepts HS long-form aliases', () => {
+    const fwd = region2(0.0035, 300);
+    const state = solve({ mode: 'HS', enthalpy: fwd.enthalpy, entropy: fwd.entropy });
     expect(state.temperature).toBeCloseTo(300, 0);
   });
 
@@ -106,8 +129,19 @@ describe('solve() unified dispatcher', () => {
     expect(state.isothermalCompressibility).toBeNull();
   });
 
+  it('accepts Px long-form aliases', () => {
+    const state = solve({ mode: 'Px', pressure: 1, quality: 0.5 });
+    expect(state.region).toBe(Region.Region4);
+    expect(state.quality).toBe(0.5);
+  });
+
   it('routes Tx input', () => {
     const state = solve({ mode: 'Tx', T: 373.15, x: 0.5 });
+    expect(state.region).toBe(Region.Region4);
+  });
+
+  it('accepts Tx long-form aliases', () => {
+    const state = solve({ mode: 'Tx', temperature: 373.15, quality: 0.5 });
     expect(state.region).toBe(Region.Region4);
   });
 
@@ -118,9 +152,23 @@ describe('solve() unified dispatcher', () => {
     expect(state.temperature).toBeCloseTo(300, 6);
   });
 
+  it('accepts TH long-form aliases', () => {
+    const fwd = region1(3, 300);
+    const state = solve({ mode: 'TH', temperature: fwd.temperature, enthalpy: fwd.enthalpy });
+    expect(state.pressure).toBeCloseTo(3, 6);
+    expect(state.temperature).toBeCloseTo(300, 6);
+  });
+
   it('routes TS input', () => {
     const fwd = region2(0.0035, 700);
     const state = solve({ mode: 'TS', T: fwd.temperature, s: fwd.entropy });
+    expect(state.pressure).toBeCloseTo(0.0035, 6);
+    expect(state.temperature).toBeCloseTo(700, 6);
+  });
+
+  it('accepts TS long-form aliases', () => {
+    const fwd = region2(0.0035, 700);
+    const state = solve({ mode: 'TS', temperature: fwd.temperature, entropy: fwd.entropy });
     expect(state.pressure).toBeCloseTo(0.0035, 6);
     expect(state.temperature).toBeCloseTo(700, 6);
   });
@@ -171,6 +219,10 @@ describe('solve() unified dispatcher', () => {
 
   it('throws IF97Error for unsupported runtime modes', () => {
     expect(() => solve({ mode: 'BAD', p: 1, T: 1 } as never)).toThrow(IF97Error);
+  });
+
+  it('throws IF97Error for conflicting aliases', () => {
+    expect(() => solve({ mode: 'PT', p: 3, pressure: 4, T: 300 } as never)).toThrow(IF97Error);
   });
 
   it('returns null ionizationConstant beyond its validity range', () => {

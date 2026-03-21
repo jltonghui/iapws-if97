@@ -59,6 +59,13 @@ import { solve } from 'iapws-if97';
 const state = solve({ mode: 'PT', p: 16, T: 823.15 });
 ```
 
+`solve({ mode, ... })` accepts either engineering shorthand or long-form input names:
+
+```ts
+const a = solve({ mode: 'PT', p: 16, T: 823.15 });
+const b = solve({ mode: 'PT', pressure: 16, temperature: 823.15 });
+```
+
 Supported `mode`:
 
 ```ts
@@ -72,6 +79,8 @@ type SolveInput =
   | { mode: 'TH'; T: number; h: number }
   | { mode: 'TS'; T: number; s: number };
 ```
+
+For each aliased pair, provide either form. If you provide both, their values must match.
 
 ## Solver Return Value
 
@@ -101,6 +110,8 @@ type SteamState = {
   isothermalCompressibility: number | null;
 };
 ```
+
+`SteamState` uses canonical output names only. Input aliases such as `p`/`pressure` do not create duplicate output fields.
 
 Notes:
 

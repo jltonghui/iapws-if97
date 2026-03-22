@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { solvePx } from '../../src/index.js';
 import { saturationTemperature } from '../../src/regions/region4.js';
+import { REGION3_SUBREGIONS } from '../../src/regions/region3-data.js';
 import { region3ByRhoT } from '../../src/regions/region3.js';
 import { region3SatVolume, region3Volume } from '../../src/regions/region3-subregions.js';
 import { b3ab, b3cd, b3ef, b3gh, b3ij, b3jk, b3mn, b3op, b3qu, b3rx, b3uv, b3wx } from '../../src/regions/boundaries.js';
@@ -17,6 +18,13 @@ function expectConsistentRegion3Volume(p: number, T: number) {
 }
 
 describe('Region 3 subregion dispatch', () => {
+  it('exposes a complete Region 3 subregion table', () => {
+    expect(Object.keys(REGION3_SUBREGIONS)).toEqual([
+      'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
+      'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+    ]);
+  });
+
   it('covers the major v(p,T) dispatcher branches', () => {
     const cases = [
       { p: 45.0, T: b3ab(45.0) - 0.2 },

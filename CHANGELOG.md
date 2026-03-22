@@ -2,9 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## 2.0.2
+
+- Consolidated Region 3 subregion coefficient tables into a single module.
+- Simplified Region 3 dispatcher data access through a single aggregate lookup table.
+- Added structural test coverage to ensure the full Region 3 subregion table remains intact.
+
 ## 2.0.1
 
-- Added long-form aliases to `solve({ mode, ... })` inputs while keeping shorthand fields fully supported. Canonical output field names in `SteamState` are unchanged.
+- Added long-form aliases to `solve({ mode, ... })` inputs while keeping shorthand fields fully supported.
 - Normalized tiny floating-point residue at the public API boundary.
 
 ## 2.0.0

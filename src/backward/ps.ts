@@ -14,6 +14,7 @@ import { region5 } from '../regions/region5.js';
 import { detectRegionPS } from '../core/region-detector.js';
 import { newtonRaphson } from '../solvers/newton-raphson.js';
 import { nelderMead } from '../solvers/nelder-mead.js';
+import { validateBackwardState } from './solution-validation.js';
 import {
   mixSaturationState,
   qualityFromSaturationProperty,
@@ -181,12 +182,26 @@ export function solvePS(p: number, s: number): BasicProperties {
     case Region.Region1: {
       const T0 = r1BackwardT(p, s);
       const T = newtonRaphson((T_x) => region1(p, T_x).entropy - s, T0);
-      return region1(p, T);
+      return validateBackwardState(
+        region1(p, T),
+        [
+          { label: 'pressure', expected: p },
+          { label: 'entropy', expected: s },
+        ],
+        { solverName: 'solvePS', expectedRegion: Region.Region1 },
+      );
     }
     case Region.Region2: {
       const T0 = r2BackwardT(p, s);
       const T = newtonRaphson((T_x) => region2(p, T_x).entropy - s, T0);
-      return region2(p, T);
+      return validateBackwardState(
+        region2(p, T),
+        [
+          { label: 'pressure', expected: p },
+          { label: 'entropy', expected: s },
+        ],
+        { solverName: 'solvePS', expectedRegion: Region.Region2 },
+      );
     }
     case Region.Region3: {
       let T0: number, v0: number;
@@ -202,7 +217,14 @@ export function solvePS(p: number, s: number): BasicProperties {
                   Math.abs(region3ByRhoT(1 / pair[0], pair[1]).pressure - p),
         [v0, T0],
       );
-      return region3ByRhoT(1 / sol.x[0], sol.x[1]);
+      return validateBackwardState(
+        region3ByRhoT(1 / sol.x[0], sol.x[1]),
+        [
+          { label: 'pressure', expected: p, tolerance: 1e-5 * Math.max(1, Math.abs(p)) },
+          { label: 'entropy', expected: s },
+        ],
+        { solverName: 'solvePS', expectedRegion: Region.Region3 },
+      );
     }
     case Region.Region4: {
       const endpoints = saturationEndpointsAtPressure(p);
@@ -211,11 +233,25 @@ export function solvePS(p: number, s: number): BasicProperties {
         endpoints.vapor.entropy,
         s,
       );
-      return mixSaturationState(endpoints, x);
+      return validateBackwardState(
+        mixSaturationState(endpoints, x),
+        [
+          { label: 'pressure', expected: p },
+          { label: 'entropy', expected: s },
+        ],
+        { solverName: 'solvePS', expectedRegion: Region.Region4 },
+      );
     }
     case Region.Region5: {
       const T = newtonRaphson((T_x) => region5(p, T_x).entropy - s, 1500);
-      return region5(p, T);
+      return validateBackwardState(
+        region5(p, T),
+        [
+          { label: 'pressure', expected: p },
+          { label: 'entropy', expected: s },
+        ],
+        { solverName: 'solvePS', expectedRegion: Region.Region5 },
+      );
     }
     default:
       throw new IF97Error(`Cannot determine region for P=${p} MPa, s=${s} kJ/(kg·K)`);

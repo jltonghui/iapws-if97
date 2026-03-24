@@ -4,7 +4,7 @@ import { region2 } from '../../src/regions/region2.js';
 import { region5 } from '../../src/regions/region5.js';
 import { saturationTemperature } from '../../src/regions/region4.js';
 import { detectRegionHS } from '../../src/core/region-detector.js';
-import { Region, OutOfRangeError } from '../../src/types.js';
+import { IF97Error, Region, OutOfRangeError } from '../../src/types.js';
 import { solveHS } from '../../src/backward/hs.js';
 
 describe('detectRegionHS', () => {
@@ -54,6 +54,10 @@ describe('detectRegionHS', () => {
   it('detects Region 5 from known R5 state', () => {
     const state = region5(0.5, 1500);
     expect(detectRegionHS(state.enthalpy, state.entropy)).toBe(Region.Region5);
+  });
+
+  it('returns -1 for an infeasible low-entropy high-enthalpy combination', () => {
+    expect(detectRegionHS(1500, 1)).toBe(-1);
   });
 });
 
@@ -114,5 +118,9 @@ describe('solveHS backward equations', () => {
 
   it('throws OutOfRangeError when s is outside the supported range', () => {
     expect(() => solveHS(2000, 1e9)).toThrow(OutOfRangeError);
+  });
+
+  it('throws IF97Error for an infeasible h-s combination', () => {
+    expect(() => solveHS(1500, 1)).toThrow(IF97Error);
   });
 });

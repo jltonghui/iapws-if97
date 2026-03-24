@@ -127,6 +127,10 @@ describe('solve() unified dispatcher', () => {
     expect(state.speedOfSound).toBeNull();
     expect(state.isobaricExpansion).toBeNull();
     expect(state.isothermalCompressibility).toBeNull();
+    expect(state.viscosity).toBeNull();
+    expect(state.thermalConductivity).toBeNull();
+    expect(state.dielectricConstant).toBeNull();
+    expect(state.ionizationConstant).toBeNull();
   });
 
   it('accepts Px long-form aliases', () => {
@@ -207,6 +211,10 @@ describe('solve() unified dispatcher', () => {
     expect(state.region).toBe(Region.Region4);
     expect(state.quality).toBeCloseTo(0.5, 6);
     expect(state.surfaceTension).not.toBeNull();
+    expect(state.viscosity).toBeNull();
+    expect(state.thermalConductivity).toBeNull();
+    expect(state.dielectricConstant).toBeNull();
+    expect(state.ionizationConstant).toBeNull();
   });
 
   it('routes TS input for Region 4 (two-phase)', () => {
@@ -215,6 +223,27 @@ describe('solve() unified dispatcher', () => {
     expect(state.region).toBe(Region.Region4);
     expect(state.quality).toBeCloseTo(0.5, 6);
     expect(state.surfaceTension).not.toBeNull();
+    expect(state.viscosity).toBeNull();
+    expect(state.thermalConductivity).toBeNull();
+    expect(state.dielectricConstant).toBeNull();
+    expect(state.ionizationConstant).toBeNull();
+  });
+
+  it('keeps transport properties on saturated single-phase endpoints', () => {
+    const liquid = solve({ mode: 'Px', p: 1, x: 0 });
+    const vapor = solve({ mode: 'Px', p: 1, x: 1 });
+
+    expect(liquid.region).toBe(Region.Region4);
+    expect(liquid.quality).toBe(0);
+    expect(liquid.viscosity).toBeGreaterThan(0);
+    expect(liquid.thermalConductivity).toBeGreaterThan(0);
+    expect(typeof liquid.dielectricConstant).toBe('number');
+
+    expect(vapor.region).toBe(Region.Region4);
+    expect(vapor.quality).toBe(1);
+    expect(vapor.viscosity).toBeGreaterThan(0);
+    expect(vapor.thermalConductivity).toBeGreaterThan(0);
+    expect(typeof vapor.dielectricConstant).toBe('number');
   });
 
   it('throws IF97Error for unsupported runtime modes', () => {

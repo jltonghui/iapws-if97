@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## 2.1.0
+
+- fix some issues
+
 ## 2.0.2
 
 - Consolidated Region 3 subregion coefficient tables into a single module.

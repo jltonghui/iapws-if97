@@ -4,7 +4,7 @@ import { solvePH } from '../../src/backward/ph.js';
 import { solvePS } from '../../src/backward/ps.js';
 import { solveHS } from '../../src/backward/hs.js';
 import { solvePx, solveTx } from '../../src/saturation/two-phase.js';
-import { OutOfRangeError, Region } from '../../src/types.js';
+import { IF97Error, OutOfRangeError, Region } from '../../src/types.js';
 
 describe('backward solver coverage regressions', () => {
   it('covers Region 3 round trips for PH and PS', () => {
@@ -47,5 +47,23 @@ describe('two-phase input guards', () => {
     expect(() => solvePx(1, 1.01)).toThrow(OutOfRangeError);
     expect(() => solveTx(200, 0.5)).toThrow(OutOfRangeError);
     expect(() => solveTx(700, 1.5)).toThrow(OutOfRangeError);
+  });
+});
+
+describe('backward solver validity guards', () => {
+  it('solvePH rejects a false Region 4 endpoint match', () => {
+    expect(() => solvePH(19.996756568756535, 1783.583958931849)).toThrow(IF97Error);
+  });
+
+  it('solvePH rejects a false Region 5 state above the IF97 temperature ceiling', () => {
+    expect(() => solvePH(38.09426710643904, 7375.591808802688)).toThrow(IF97Error);
+  });
+
+  it('solvePS rejects a false Region 2 state outside the IF97 PT envelope', () => {
+    expect(() => solvePS(71.99643178391858, 5.870236071132793)).toThrow(IF97Error);
+  });
+
+  it('solvePS rejects a false Region 5 state above the IF97 temperature ceiling', () => {
+    expect(() => solvePS(33.914565781003844, 9.410102343702885)).toThrow(IF97Error);
   });
 });

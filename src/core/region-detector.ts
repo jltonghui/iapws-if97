@@ -10,6 +10,7 @@ import { region5 } from '../regions/region5.js';
 import { saturationEndpointsAtTemperature } from '../saturation/common.js';
 import type { BasicProperties, CoefficientTable } from '../types.js';
 import { Region } from '../types.js';
+import { bracketedNewton } from '../solvers/bracketed-newton.js';
 import { solveRegion3PTBasic } from './region3-pt.js';
 
 /**
@@ -336,6 +337,21 @@ function h1Sat(s: number): number {
 }
 
 /**
+ * Region 1 upper enthalpy bound at 100 MPa for a given entropy.
+ * This closes the low-entropy infeasible gap where using the global
+ * Region 1 enthalpy maximum would admit impossible h-s pairs.
+ */
+function h1UpperBoundAtPmax(s: number): number {
+  const temperature = bracketedNewton(
+    (T) => region1(C.P_MAX, T).entropy - s,
+    C.T_MIN,
+    623.15,
+    350,
+  );
+  return region1(C.P_MAX, temperature).enthalpy;
+}
+
+/**
  * Region 1 / Region 3 boundary enthalpy (Eq. 1, B13).
  * h_13(s)
  */
@@ -514,7 +530,7 @@ export function detectRegionHS(h: number, s: number): Region | -1 {
   if (s >= _sL.entropy && s <= s13) {
     const hmin = hSatLow(s);
     const hs = h1Sat(s);
-    const hmax = region1(100, 623.15).enthalpy;
+    const hmax = h1UpperBoundAtPmax(s);
 
     if (h >= hmin && h < hs) return Region.Region4;
     if (h >= hs && h <= hmax) return Region.Region1;

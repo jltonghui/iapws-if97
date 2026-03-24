@@ -18,6 +18,7 @@ import { detectRegionHS } from '../core/region-detector.js';
 import { newtonRaphson } from '../solvers/newton-raphson.js';
 import { nelderMead } from '../solvers/nelder-mead.js';
 import { solvePH } from './ph.js';
+import { validateBackwardState } from './solution-validation.js';
 import {
   mixSaturationState,
   qualityFromSaturationProperty,
@@ -225,7 +226,14 @@ export function solveHS(h: number, s: number): BasicProperties {
                   Math.abs(region1(pair[0], pair[1]).entropy - s),
         [P0, 400],
       );
-      return region1(sol.x[0], sol.x[1]);
+      return validateBackwardState(
+        region1(sol.x[0], sol.x[1]),
+        [
+          { label: 'enthalpy', expected: h },
+          { label: 'entropy', expected: s },
+        ],
+        { solverName: 'solveHS', expectedRegion: Region.Region1 },
+      );
     }
     case Region.Region2: {
       const P0 = r2Phs(h, s);
@@ -235,7 +243,14 @@ export function solveHS(h: number, s: number): BasicProperties {
                   Math.abs(region2(pair[0], pair[1]).entropy - s),
         [P0, T0],
       );
-      return region2(sol.x[0], sol.x[1]);
+      return validateBackwardState(
+        region2(sol.x[0], sol.x[1]),
+        [
+          { label: 'enthalpy', expected: h },
+          { label: 'entropy', expected: s },
+        ],
+        { solverName: 'solveHS', expectedRegion: Region.Region2 },
+      );
     }
     case Region.Region3: {
       const P0 = r3Phs(h, s);
@@ -247,7 +262,14 @@ export function solveHS(h: number, s: number): BasicProperties {
                   Math.abs(region3ByRhoT(pair[0], pair[1]).entropy - s),
         [rho0, T0],
       );
-      return region3ByRhoT(sol.x[0], sol.x[1]);
+      return validateBackwardState(
+        region3ByRhoT(sol.x[0], sol.x[1]),
+        [
+          { label: 'enthalpy', expected: h },
+          { label: 'entropy', expected: s },
+        ],
+        { solverName: 'solveHS', expectedRegion: Region.Region3 },
+      );
     }
     case Region.Region4: {
       // Critical point check
@@ -292,9 +314,16 @@ export function solveHS(h: number, s: number): BasicProperties {
         )
       ) / 2;
 
-      return mixSaturationState(
-        saturationEndpointsAtPressure(endpoints.pressure),
-        quality,
+      return validateBackwardState(
+        mixSaturationState(
+          saturationEndpointsAtPressure(endpoints.pressure),
+          quality,
+        ),
+        [
+          { label: 'enthalpy', expected: h },
+          { label: 'entropy', expected: s },
+        ],
+        { solverName: 'solveHS', expectedRegion: Region.Region4 },
       );
     }
     case Region.Region5: {
@@ -303,7 +332,14 @@ export function solveHS(h: number, s: number): BasicProperties {
                   Math.abs(region5(pair[0], pair[1]).entropy - s),
         [1, 1400],
       );
-      return region5(sol.x[0], sol.x[1]);
+      return validateBackwardState(
+        region5(sol.x[0], sol.x[1]),
+        [
+          { label: 'enthalpy', expected: h },
+          { label: 'entropy', expected: s },
+        ],
+        { solverName: 'solveHS', expectedRegion: Region.Region5 },
+      );
     }
     default:
       throw new IF97Error(`Cannot determine region for h=${h} kJ/kg, s=${s} kJ/(kg·K)`);

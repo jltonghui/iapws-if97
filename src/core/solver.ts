@@ -23,8 +23,12 @@ import { solvePx, solveTx } from '../saturation/two-phase.js';
  * Compute full thermodynamic state from basic properties by adding transport properties.
  */
 function enrichState(basic: BasicProperties): SteamState {
+  const isTwoPhaseMixture = basic.region === Region.Region4
+    && basic.quality !== null
+    && basic.quality > 0
+    && basic.quality < 1;
   const rho = 1 / basic.specificVolume;
-  const mu = viscosity(basic.temperature, rho);
+  const mu = isTwoPhaseMixture ? null : viscosity(basic.temperature, rho);
   const drhodP_T = basic.isothermalCompressibility === null
     ? undefined
     : rho * basic.isothermalCompressibility;
@@ -34,15 +38,17 @@ function enrichState(basic: BasicProperties): SteamState {
     ...basic,
     density: rho,
     viscosity: mu,
-    thermalConductivity: thermalConductivity(
-      basic.temperature, rho,
-      cp, cv, drhodP_T, mu,
-    ),
+    thermalConductivity: isTwoPhaseMixture
+      ? null
+      : thermalConductivity(
+        basic.temperature, rho,
+        cp, cv, drhodP_T, mu ?? undefined,
+      ),
     surfaceTension: basic.region === Region.Region4
       ? surfaceTension(basic.temperature)
       : null,
-    dielectricConstant: dielectricConstant(basic.temperature, rho),
-    ionizationConstant: ionizationConstant(basic.temperature, rho),
+    dielectricConstant: isTwoPhaseMixture ? null : dielectricConstant(basic.temperature, rho),
+    ionizationConstant: isTwoPhaseMixture ? null : ionizationConstant(basic.temperature, rho),
   };
 }
 

@@ -55,14 +55,14 @@ export interface SteamState {
 
   // ── Transport Properties ──────────────────────────────────────────────
 
-  /** Dynamic viscosity [Pa·s] */
-  viscosity: number;
-  /** Thermal conductivity [W/(m·K)] */
-  thermalConductivity: number;
+  /** Dynamic viscosity [Pa·s], null for two-phase mixtures */
+  viscosity: number | null;
+  /** Thermal conductivity [W/(m·K)], null for two-phase mixtures */
+  thermalConductivity: number | null;
   /** Surface tension [N/m], only meaningful at saturation */
   surfaceTension: number | null;
-  /** Static dielectric constant [dimensionless] */
-  dielectricConstant: number;
+  /** Static dielectric constant [dimensionless], null for two-phase mixtures */
+  dielectricConstant: number | null;
   /** Ionization constant pKw [dimensionless], null outside released validity range */
   ionizationConstant: number | null;
 

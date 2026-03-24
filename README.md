@@ -100,10 +100,10 @@ type SteamState = {
   cv: number | null;
   speedOfSound: number | null;
   quality: number | null;
-  viscosity: number;
-  thermalConductivity: number;
+  viscosity: number | null;
+  thermalConductivity: number | null;
   surfaceTension: number | null;
-  dielectricConstant: number;
+  dielectricConstant: number | null;
   ionizationConstant: number | null;
   isobaricExpansion: number | null;
   isothermalCompressibility: number | null;
@@ -115,7 +115,8 @@ type SteamState = {
 **Notes:**
 
 - `quality` is `null` for single-phase states — it is only defined on the saturation line.
-- In two-phase mixtures (`0 < x < 1`), `cp`, `cv`, `speedOfSound`, `isobaricExpansion`, and `isothermalCompressibility` are `null`.
+- In two-phase mixtures (`0 < x < 1`), `cp`, `cv`, `speedOfSound`, `isobaricExpansion`, `isothermalCompressibility`, `viscosity`, `thermalConductivity`, `dielectricConstant`, and `ionizationConstant` are `null`.
+- Saturation endpoints (`x = 0` or `x = 1`) still expose single-phase transport properties even though they carry Region 4 metadata.
 - `surfaceTension` is only available for Region 4 saturation states below the critical point; otherwise `null`.
 - `density` is provided directly — no need to invert `specificVolume`.
 - `ionizationConstant` is `null` outside the IAPWS validity range for that correlation.
@@ -229,6 +230,12 @@ npm test
 npm run test:coverage
 npm run test:standards
 ```
+
+## Integration Validation
+
+![Mollier h-s diagram generated with iapws-if97](https://raw.githubusercontent.com/jltonghui/iapws-if97/main/assets/pics/mollier-hs-diagram.svg)
+
+This Mollier `h-s` diagram was generated with `iapws-if97` as a practical end-to-end validation artifact.
 
 ### ASME Validation Snapshot
 

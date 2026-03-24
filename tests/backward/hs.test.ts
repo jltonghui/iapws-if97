@@ -6,6 +6,7 @@ import { saturationTemperature } from '../../src/regions/region4.js';
 import { detectRegionHS } from '../../src/core/region-detector.js';
 import { IF97Error, Region, OutOfRangeError } from '../../src/types.js';
 import { solveHS } from '../../src/backward/hs.js';
+import { solvePx } from '../../src/saturation/two-phase.js';
 
 describe('detectRegionHS', () => {
   it('detects Region 1 from known R1 state', () => {
@@ -100,6 +101,14 @@ describe('solveHS backward equations', () => {
     expect(Math.abs(back.temperature - 1500)).toBeLessThan(5);
   });
 
+  it('preserves the exact enthalpy and entropy inputs', () => {
+    const forward = region2(30, 700);
+    const backward = solveHS(forward.enthalpy, forward.entropy);
+
+    expect(backward.enthalpy).toBe(forward.enthalpy);
+    expect(backward.entropy).toBe(forward.entropy);
+  });
+
   it('R4: two-phase at 1 MPa, x=0.5', () => {
     const Tsat = saturationTemperature(1);
     const liq = region1(1, Tsat);
@@ -110,6 +119,17 @@ describe('solveHS backward equations', () => {
     expect(back.region).toBe(Region.Region4);
     expect(back.quality).toBeGreaterThan(0.3);
     expect(back.quality).toBeLessThan(0.7);
+  });
+
+  it('R4 high-pressure: preserves a state above 623.15K', () => {
+    const forward = solvePx(20, 0.4);
+    const backward = solveHS(forward.enthalpy, forward.entropy);
+
+    expect(backward.region).toBe(Region.Region4);
+    expect(backward.pressure).toBeCloseTo(forward.pressure, 5);
+    expect(backward.temperature).toBeCloseTo(forward.temperature, 5);
+    expect(backward.quality).toBeCloseTo(forward.quality!, 5);
+    expect(backward.specificVolume).toBeCloseTo(forward.specificVolume, 5);
   });
 
   it('throws OutOfRangeError when h is outside the supported range', () => {

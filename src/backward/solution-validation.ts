@@ -102,6 +102,32 @@ function validateConstraints(
   }
 }
 
+function withExactConstraints(
+  state: BasicProperties,
+  constraints: readonly BackwardConstraint[],
+): BasicProperties {
+  const normalized = { ...state };
+
+  for (const constraint of constraints) {
+    switch (constraint.label) {
+      case 'pressure':
+        normalized.pressure = Object.is(constraint.expected, -0) ? 0 : constraint.expected;
+        break;
+      case 'temperature':
+        normalized.temperature = Object.is(constraint.expected, -0) ? 0 : constraint.expected;
+        break;
+      case 'enthalpy':
+        normalized.enthalpy = Object.is(constraint.expected, -0) ? 0 : constraint.expected;
+        break;
+      case 'entropy':
+        normalized.entropy = Object.is(constraint.expected, -0) ? 0 : constraint.expected;
+        break;
+    }
+  }
+
+  return normalized;
+}
+
 export function validateBackwardState(
   state: BasicProperties,
   constraints: readonly BackwardConstraint[],
@@ -110,5 +136,5 @@ export function validateBackwardState(
   validateBasicEnvelope(state, options.solverName);
   validateRegionConsistency(state, options.solverName, options.expectedRegion);
   validateConstraints(state, constraints, options.solverName);
-  return state;
+  return withExactConstraints(state, constraints);
 }

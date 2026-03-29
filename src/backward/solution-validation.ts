@@ -3,6 +3,10 @@ import { detectRegionPT } from '../core/region-detector.js';
 import { saturationPressure } from '../regions/region4.js';
 import type { BasicProperties } from '../types.js';
 import { IF97Error, Region } from '../types.js';
+import {
+  backwardConstraintTolerance,
+  region4SaturationPressureTolerance,
+} from './tolerances.js';
 
 export interface BackwardConstraint {
   label: 'pressure' | 'temperature' | 'enthalpy' | 'entropy';
@@ -13,20 +17,6 @@ export interface BackwardConstraint {
 export interface BackwardValidationOptions {
   solverName: string;
   expectedRegion?: Region;
-}
-
-function defaultTolerance(label: BackwardConstraint['label'], expected: number): number {
-  switch (label) {
-    case 'pressure':
-    case 'temperature':
-      return 1e-9 * Math.max(1, Math.abs(expected));
-    case 'enthalpy':
-      return 1e-4 * Math.max(1, Math.abs(expected));
-    case 'entropy':
-      return 1e-6 * Math.max(1, Math.abs(expected));
-    default:
-      return 1e-9;
-  }
 }
 
 function propertyValue(state: BasicProperties, label: BackwardConstraint['label']): number {
@@ -71,7 +61,7 @@ function validateRegionConsistency(
     }
 
     const psat = saturationPressure(state.temperature);
-    const pTolerance = 1e-8 * Math.max(1, Math.abs(state.pressure));
+    const pTolerance = region4SaturationPressureTolerance(state.pressure);
     if (Math.abs(psat - state.pressure) > pTolerance) {
       throw new IF97Error(`${solverName} produced a Region 4 state off the saturation curve`);
     }
@@ -93,7 +83,7 @@ function validateConstraints(
 ): void {
   for (const constraint of constraints) {
     const actual = propertyValue(state, constraint.label);
-    const tolerance = constraint.tolerance ?? defaultTolerance(constraint.label, constraint.expected);
+    const tolerance = constraint.tolerance ?? backwardConstraintTolerance(constraint.label, constraint.expected);
     if (Math.abs(actual - constraint.expected) > tolerance) {
       throw new IF97Error(
         `${solverName} failed to match ${constraint.label}: expected ${constraint.expected}, got ${actual}`,

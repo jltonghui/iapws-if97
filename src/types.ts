@@ -15,7 +15,7 @@ export enum Region {
   Region2 = 2,
   /** Supercritical fluid */
   Region3 = 3,
-  /** Two-phase (wet steam / saturation line) */
+  /** Two-phase (wet steam / saturation line, excluding the exact critical point) */
   Region4 = 4,
   /** High-temperature steam (T > 1073.15 K) */
   Region5 = 5,
@@ -50,7 +50,7 @@ export interface SteamState {
   cv: number | null;
   /** Speed of sound [m/s] */
   speedOfSound: number | null;
-  /** Vapour quality (0–1), only defined in Region 4 */
+  /** Vapour quality (0–1), only defined on accepted Region 4 saturation states */
   quality: number | null;
 
   // ── Transport Properties ──────────────────────────────────────────────

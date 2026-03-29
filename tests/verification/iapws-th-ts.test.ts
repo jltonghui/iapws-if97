@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Region, solve, solvePT, solveTH, solveTS } from '../../src/index.js';
-
-function expectRelClose(actual: number, expected: number, tol = 1e-6) {
-  const err = expected === 0 ? Math.abs(actual) : Math.abs((actual - expected) / expected);
-  expect(err).toBeLessThan(tol);
-}
+import { expectRelativeClose } from '../assertions.js';
+import { expectBackwardValue } from '../backward/assertions.js';
 
 describe('IAPWS TH/TS backward verification', () => {
   describe('Region 1 — Table 5 backward check', () => {
@@ -15,8 +12,8 @@ describe('IAPWS TH/TS backward verification', () => {
 
       expect(fromTH.region).toBe(Region.Region1);
       expect(fromTS.region).toBe(Region.Region1);
-      expectRelClose(fromTH.pressure, 3);
-      expectRelClose(fromTS.pressure, 3);
+      expectRelativeClose(fromTH.pressure, 3);
+      expectRelativeClose(fromTS.pressure, 3);
     });
   });
 
@@ -28,8 +25,8 @@ describe('IAPWS TH/TS backward verification', () => {
 
       expect(fromTH.region).toBe(Region.Region2);
       expect(fromTS.region).toBe(Region.Region2);
-      expectRelClose(fromTH.pressure, 0.0035);
-      expectRelClose(fromTS.pressure, 0.0035);
+      expectRelativeClose(fromTH.pressure, 0.0035);
+      expectRelativeClose(fromTS.pressure, 0.0035);
     });
   });
 
@@ -50,11 +47,11 @@ describe('IAPWS TH/TS backward verification', () => {
         expect(fromTH.region).toBe(Region.Region3);
         expect(fromTS.region).toBe(Region.Region3);
 
-        expect(fromTH.temperature).toBeCloseTo(T, 9);
-        expect(fromTS.temperature).toBeCloseTo(T, 9);
+        expectBackwardValue(fromTH.temperature, T, 'temperature');
+        expectBackwardValue(fromTS.temperature, T, 'temperature');
 
-        expectRelClose(fromTH.pressure, p);
-        expectRelClose(fromTS.pressure, p);
+        expectRelativeClose(fromTH.pressure, p);
+        expectRelativeClose(fromTS.pressure, p);
       });
     });
   });
@@ -76,11 +73,11 @@ describe('IAPWS TH/TS backward verification', () => {
         expect(fromTH.region).toBe(Region.Region5);
         expect(fromTS.region).toBe(Region.Region5);
 
-        expect(fromTH.temperature).toBeCloseTo(T, 9);
-        expect(fromTS.temperature).toBeCloseTo(T, 9);
+        expectBackwardValue(fromTH.temperature, T, 'temperature');
+        expectBackwardValue(fromTS.temperature, T, 'temperature');
 
-        expectRelClose(fromTH.pressure, p);
-        expectRelClose(fromTS.pressure, p);
+        expectRelativeClose(fromTH.pressure, p);
+        expectRelativeClose(fromTS.pressure, p);
       });
     });
   });
@@ -91,7 +88,7 @@ describe('IAPWS TH/TS backward verification', () => {
       const state = solve({ mode: 'TH', T: 650, h: forward.enthalpy });
 
       expect(state.region).toBe(Region.Region3);
-      expectRelClose(state.pressure, 25.5837018);
+      expectRelativeClose(state.pressure, 25.5837018);
     });
 
     it('routes TS input on an official Region 5 point', () => {
@@ -99,7 +96,7 @@ describe('IAPWS TH/TS backward verification', () => {
       const state = solve({ mode: 'TS', T: 1500, s: forward.entropy });
 
       expect(state.region).toBe(Region.Region5);
-      expectRelClose(state.pressure, 30);
+      expectRelativeClose(state.pressure, 30);
     });
   });
 });

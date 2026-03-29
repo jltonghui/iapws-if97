@@ -2,6 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import { viscosity, thermalConductivity, surfaceTension, dielectricConstant, ionizationConstant } from '../../src/transport/properties.js';
 import { Tc, RHOc } from '../../src/constants.js';
+import { expectDigitsClose } from '../assertions.js';
 
 describe('Transport Properties', () => {
   describe('viscosity', () => {
@@ -78,13 +79,13 @@ describe('Transport Properties', () => {
     it('returns ~0.0728 N/m at 293.15K (20°C)', () => {
       const sigma = surfaceTension(293.15);
       expect(sigma).not.toBeNull();
-      expect(sigma).toBeCloseTo(0.0728, 3);
+      expectDigitsClose(sigma!, 0.0728, 3);
     });
 
     it('returns 0 at critical temperature', () => {
       const sigma = surfaceTension(Tc);
       expect(sigma).not.toBeNull();
-      expect(sigma).toBeCloseTo(0, 6);
+      expectDigitsClose(sigma!, 0, 6);
     });
 
     it('decreases with temperature', () => {

@@ -1,21 +1,22 @@
 import { describe, it, expect } from 'vitest';
 import { bracketedNewton } from '../../src/solvers/bracketed-newton.js';
 import { ConvergenceError, IF97Error } from '../../src/types.js';
+import { expectDigitsClose } from '../assertions.js';
 
 describe('bracketedNewton', () => {
   it('finds root of a linear function', () => {
     const root = bracketedNewton((x) => x - 3, 0, 10, 5);
-    expect(root).toBeCloseTo(3, 9);
+    expectDigitsClose(root, 3, 9);
   });
 
   it('finds root of a quadratic', () => {
     const root = bracketedNewton((x) => x * x - 4, 0, 10, 3);
-    expect(root).toBeCloseTo(2, 9);
+    expectDigitsClose(root, 2, 9);
   });
 
   it('finds root when initial guess is outside bracket (clamped to midpoint)', () => {
     const root = bracketedNewton((x) => x - 5, 0, 10, -100);
-    expect(root).toBeCloseTo(5, 9);
+    expectDigitsClose(root, 5, 9);
   });
 
   it('returns immediately when lower endpoint is the root', () => {
@@ -47,6 +48,6 @@ describe('bracketedNewton', () => {
 
   it('handles reversed bracket bounds', () => {
     const root = bracketedNewton((x) => x - 3, 10, 0, 5);
-    expect(root).toBeCloseTo(3, 9);
+    expectDigitsClose(root, 3, 9);
   });
 });

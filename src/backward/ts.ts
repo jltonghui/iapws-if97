@@ -20,6 +20,7 @@ import {
   qualityFromSaturationProperty,
   saturationEndpointsAtTemperature,
 } from '../saturation/common.js';
+import { assertRegion4StateAllowed } from '../saturation/region4-boundaries.js';
 import { solveFixedTemperaturePressure } from './fixed-temperature-solver.js';
 import { validateBackwardState } from './solution-validation.js';
 
@@ -104,6 +105,7 @@ export function solveTS(T: number, s: number): BasicProperties {
     }
     case Region.Region4: {
       const endpoints = saturationEndpointsAtTemperature(T);
+      assertRegion4StateAllowed(endpoints.pressure, endpoints.temperature, 'solveTS');
       const x = qualityFromSaturationProperty(
         endpoints.liquid.entropy,
         endpoints.vapor.entropy,

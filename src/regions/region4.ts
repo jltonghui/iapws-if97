@@ -7,8 +7,12 @@
  * Reference: IAPWS-IF97, Section 8 (Equations for Region 4)
  */
 
-import { Tc, Pt, Pc } from '../constants.js';
+import { Tc, Pc, P_MIN } from '../constants.js';
 import { OutOfRangeError } from '../types.js';
+import {
+  normalizeRegion4Pressure,
+  normalizeRegion4Temperature,
+} from '../saturation/region4-boundaries.js';
 
 // ─── Saturation Line Coefficients (Table 34, IAPWS-IF97) ───────────────────
 
@@ -44,20 +48,24 @@ export function saturationPressure(T: number): number {
   const B = n[3] * theta * theta + n[4] * theta + n[5];
   const C = n[6] * theta * theta + n[7] * theta + n[8];
 
-  return Math.pow(2 * C / (-B + Math.sqrt(B * B - 4 * A * C)), 4);
+  return normalizeRegion4Pressure(
+    Math.pow(2 * C / (-B + Math.sqrt(B * B - 4 * A * C)), 4),
+  );
 }
 
 /**
  * Saturation temperature for a given pressure.
  * Equation 31 (pp. 34) of IAPWS-IF97.
  *
- * @param p - Pressure [MPa], Pt ≤ P ≤ Pc
+ * @param p - Pressure [MPa], P_MIN ≤ P ≤ Pc
+ *            (P_MIN = Psat(273.15 K), the lower pressure bound matching
+ *            saturationPressure's lower temperature bound per IAPWS-IF97 §8)
  * @returns Saturation temperature [K]
  * @throws {OutOfRangeError} if P is outside valid range
  */
 export function saturationTemperature(p: number): number {
-  if (p < Pt || p > Pc) {
-    throw new OutOfRangeError('Pressure', p, Pt, Pc);
+  if (p < P_MIN || p > Pc) {
+    throw new OutOfRangeError('Pressure', p, P_MIN, Pc);
   }
 
   const beta = Math.pow(p, 0.25);
@@ -66,7 +74,9 @@ export function saturationTemperature(p: number): number {
   const G = n[2] * beta * beta + n[5] * beta + n[8];
   const D = 2 * G / (-F - Math.sqrt(F * F - 4 * E * G));
 
-  return (n[10] + D - Math.sqrt(
-    Math.pow(n[10] + D, 2) - 4 * (n[9] + n[10] * D),
-  )) / 2;
+  return normalizeRegion4Temperature(
+    (n[10] + D - Math.sqrt(
+      Math.pow(n[10] + D, 2) - 4 * (n[9] + n[10] * D),
+    )) / 2,
+  );
 }

@@ -24,6 +24,10 @@ import {
   qualityFromSaturationProperty,
   saturationEndpointsAtPressure,
 } from '../saturation/common.js';
+import {
+  assertCriticalRegion4PHInput,
+  assertRegion4StateAllowed,
+} from '../saturation/region4-boundaries.js';
 
 // ─── Backward Polynomial Evaluator ─────────────────────────────────────────
 
@@ -222,6 +226,7 @@ export function solvePH(p: number, h: number): BasicProperties {
   if (h < C.H_MIN || h > C.H_MAX) {
     throw new OutOfRangeError('Enthalpy', h, C.H_MIN, C.H_MAX);
   }
+  assertCriticalRegion4PHInput(p, h, 'solvePH');
 
   const region = detectRegionPH(p, h);
 
@@ -276,6 +281,7 @@ export function solvePH(p: number, h: number): BasicProperties {
     }
     case Region.Region4: {
       const endpoints = saturationEndpointsAtPressure(p);
+      assertRegion4StateAllowed(endpoints.pressure, endpoints.temperature, 'solvePH');
       const x = qualityFromSaturationProperty(
         endpoints.liquid.enthalpy,
         endpoints.vapor.enthalpy,

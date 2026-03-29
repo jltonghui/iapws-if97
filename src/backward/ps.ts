@@ -20,6 +20,10 @@ import {
   qualityFromSaturationProperty,
   saturationEndpointsAtPressure,
 } from '../saturation/common.js';
+import {
+  assertCriticalRegion4PSInput,
+  assertRegion4StateAllowed,
+} from '../saturation/region4-boundaries.js';
 
 function evalPoly(table: CoefficientTable, piShift: number, sigShift: number, pi: number, sig: number): number {
   let sum = 0;
@@ -175,6 +179,7 @@ export function solvePS(p: number, s: number): BasicProperties {
   if (s < C.S_MIN || s > C.S_MAX) {
     throw new OutOfRangeError('Entropy', s, C.S_MIN, C.S_MAX);
   }
+  assertCriticalRegion4PSInput(p, s, 'solvePS');
 
   const region = detectRegionPS(p, s);
 
@@ -228,6 +233,7 @@ export function solvePS(p: number, s: number): BasicProperties {
     }
     case Region.Region4: {
       const endpoints = saturationEndpointsAtPressure(p);
+      assertRegion4StateAllowed(endpoints.pressure, endpoints.temperature, 'solvePS');
       const x = qualityFromSaturationProperty(
         endpoints.liquid.entropy,
         endpoints.vapor.entropy,

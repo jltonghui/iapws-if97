@@ -7,8 +7,10 @@ import { solvePT, solve } from '../../src/core/solver.js';
 import { region1 } from '../../src/regions/region1.js';
 import { region2 } from '../../src/regions/region2.js';
 import { solveTx } from '../../src/saturation/two-phase.js';
-import { Tc, Pc } from '../../src/constants.js';
+import { Tc, Pc, Pt, Tt, P_MIN } from '../../src/constants.js';
 import { Region, IF97Error, OutOfRangeError } from '../../src/types.js';
+import { expectBackwardValue, expectRegion4RoundTrip } from '../backward/assertions.js';
+import { expectDigitsClose } from '../assertions.js';
 
 function relErr(a: number, b: number): number {
   return b === 0 ? Math.abs(a) : Math.abs((a - b) / b);
@@ -22,7 +24,7 @@ describe('solvePT — Integration', () => {
     expect(s.region).toBe(Region.Region1);
     expect(relErr(s.specificVolume, 0.100215168e-2)).toBeLessThan(TOL);
     expect(relErr(s.enthalpy, 0.115331273e3)).toBeLessThan(TOL);
-    expect(s.density).toBeCloseTo(1 / 0.100215168e-2, 2);
+    expectDigitsClose(s.density, 1 / 0.100215168e-2, 2);
     // Transport properties should be numeric
     expect(s.viscosity).toBeGreaterThan(0);
     expect(s.thermalConductivity).toBeGreaterThan(0);
@@ -57,6 +59,11 @@ describe('solvePT — Integration', () => {
     expect(() => solvePT(200, 300)).toThrow(OutOfRangeError);
   });
 
+  it('accepts PT at P_MIN (the full IF97 lower pressure bound)', () => {
+    const state = solvePT(P_MIN, 273.15);
+    expect(state.region).toBe(Region.Region1);
+  });
+
   it('throws OutOfRangeError for invalid T', () => {
     expect(() => solvePT(1, 3000)).toThrow(OutOfRangeError);
   });
@@ -82,40 +89,45 @@ describe('solve() unified dispatcher', () => {
     expect(state.region).toBe(Region.Region1);
   });
 
+  it('accepts PT at P_MIN via the unified dispatcher', () => {
+    const state = solve({ mode: 'PT', p: P_MIN, T: 273.15 });
+    expect(state.region).toBe(Region.Region1);
+  });
+
   it('routes PH input', () => {
     const fwd = region1(3, 300);
     const state = solve({ mode: 'PH', p: 3, h: fwd.enthalpy });
-    expect(state.temperature).toBeCloseTo(300, 0);
+    expectBackwardValue(state.temperature, fwd.temperature, 'temperature');
   });
 
   it('accepts PH long-form aliases', () => {
     const fwd = region1(3, 300);
     const state = solve({ mode: 'PH', pressure: 3, enthalpy: fwd.enthalpy });
-    expect(state.temperature).toBeCloseTo(300, 0);
+    expectBackwardValue(state.temperature, fwd.temperature, 'temperature');
   });
 
   it('routes PS input', () => {
     const fwd = region1(3, 300);
     const state = solve({ mode: 'PS', p: 3, s: fwd.entropy });
-    expect(state.temperature).toBeCloseTo(300, 0);
+    expectBackwardValue(state.temperature, fwd.temperature, 'temperature');
   });
 
   it('accepts PS long-form aliases', () => {
     const fwd = region1(3, 300);
     const state = solve({ mode: 'PS', pressure: 3, entropy: fwd.entropy });
-    expect(state.temperature).toBeCloseTo(300, 0);
+    expectBackwardValue(state.temperature, fwd.temperature, 'temperature');
   });
 
   it('routes HS input', () => {
     const fwd = region2(0.0035, 300);
     const state = solve({ mode: 'HS', h: fwd.enthalpy, s: fwd.entropy });
-    expect(state.temperature).toBeCloseTo(300, 0);
+    expectBackwardValue(state.temperature, fwd.temperature, 'temperature');
   });
 
   it('accepts HS long-form aliases', () => {
     const fwd = region2(0.0035, 300);
     const state = solve({ mode: 'HS', enthalpy: fwd.enthalpy, entropy: fwd.entropy });
-    expect(state.temperature).toBeCloseTo(300, 0);
+    expectBackwardValue(state.temperature, fwd.temperature, 'temperature');
   });
 
   it('routes Px input', () => {
@@ -149,67 +161,94 @@ describe('solve() unified dispatcher', () => {
     expect(state.region).toBe(Region.Region4);
   });
 
+  it('accepts the triple-point saturation endpoints via Px and Tx', () => {
+    const fromPx = solve({ mode: 'Px', p: Pt, x: 0 });
+    const fromTx = solve({ mode: 'Tx', T: Tt, x: 1 });
+
+    expect(fromPx.temperature).toBe(Tt);
+    expect(fromPx.quality).toBe(0);
+    expect(fromTx.pressure).toBe(Pt);
+    expect(fromTx.quality).toBe(1);
+  });
+
+  it('rejects critical-point Px input', () => {
+    expect(() => solve({ mode: 'Px', p: Pc, x: 0.5 })).toThrow(IF97Error);
+    expect(() => solve({ mode: 'Px', p: Pc, x: 0.5 })).toThrow(/critical/i);
+  });
+
+  it('rejects critical-point Tx input', () => {
+    expect(() => solve({ mode: 'Tx', T: Tc, x: 0.5 })).toThrow(IF97Error);
+    expect(() => solve({ mode: 'Tx', T: Tc, x: 0.5 })).toThrow(/critical/i);
+  });
+
+  it('rejects the 273.15 K saturation extrapolation boundary for Tx input', () => {
+    expect(() => solve({ mode: 'Tx', T: 273.15, x: 0.5 })).toThrow(OutOfRangeError);
+  });
+
   it('routes TH input', () => {
     const fwd = region1(3, 300);
     const state = solve({ mode: 'TH', T: fwd.temperature, h: fwd.enthalpy });
-    expect(state.pressure).toBeCloseTo(3, 6);
-    expect(state.temperature).toBeCloseTo(300, 6);
+    expectBackwardValue(state.pressure, fwd.pressure, 'pressure');
+    expectBackwardValue(state.temperature, fwd.temperature, 'temperature');
   });
 
   it('accepts TH long-form aliases', () => {
     const fwd = region1(3, 300);
     const state = solve({ mode: 'TH', temperature: fwd.temperature, enthalpy: fwd.enthalpy });
-    expect(state.pressure).toBeCloseTo(3, 6);
-    expect(state.temperature).toBeCloseTo(300, 6);
+    expectBackwardValue(state.pressure, fwd.pressure, 'pressure');
+    expectBackwardValue(state.temperature, fwd.temperature, 'temperature');
   });
 
   it('routes TS input', () => {
     const fwd = region2(0.0035, 700);
     const state = solve({ mode: 'TS', T: fwd.temperature, s: fwd.entropy });
-    expect(state.pressure).toBeCloseTo(0.0035, 6);
-    expect(state.temperature).toBeCloseTo(700, 6);
+    expectBackwardValue(state.pressure, fwd.pressure, 'pressure');
+    expectBackwardValue(state.temperature, fwd.temperature, 'temperature');
   });
 
   it('accepts TS long-form aliases', () => {
     const fwd = region2(0.0035, 700);
     const state = solve({ mode: 'TS', temperature: fwd.temperature, entropy: fwd.entropy });
-    expect(state.pressure).toBeCloseTo(0.0035, 6);
-    expect(state.temperature).toBeCloseTo(700, 6);
+    expectBackwardValue(state.pressure, fwd.pressure, 'pressure');
+    expectBackwardValue(state.temperature, fwd.temperature, 'temperature');
   });
 
   it('routes TH input for Region 3', () => {
     const fwd = solvePT(25, 650);
     const state = solve({ mode: 'TH', T: fwd.temperature, h: fwd.enthalpy });
     expect(state.region).toBe(Region.Region3);
-    expect(state.pressure).toBeCloseTo(25, 6);
+    expectBackwardValue(state.pressure, fwd.pressure, 'pressure');
+    expectBackwardValue(state.temperature, fwd.temperature, 'temperature');
   });
 
   it('routes TS input for Region 3', () => {
     const fwd = solvePT(25, 650);
     const state = solve({ mode: 'TS', T: fwd.temperature, s: fwd.entropy });
     expect(state.region).toBe(Region.Region3);
-    expect(state.pressure).toBeCloseTo(25, 6);
+    expectBackwardValue(state.pressure, fwd.pressure, 'pressure');
+    expectBackwardValue(state.temperature, fwd.temperature, 'temperature');
   });
 
   it('routes TH input for Region 5', () => {
     const fwd = solvePT(0.5, 1500);
     const state = solve({ mode: 'TH', T: fwd.temperature, h: fwd.enthalpy });
     expect(state.region).toBe(Region.Region5);
-    expect(state.pressure).toBeCloseTo(0.5, 6);
+    expectBackwardValue(state.pressure, fwd.pressure, 'pressure');
+    expectBackwardValue(state.temperature, fwd.temperature, 'temperature');
   });
 
   it('routes TS input for Region 5', () => {
     const fwd = solvePT(0.5, 1500);
     const state = solve({ mode: 'TS', T: fwd.temperature, s: fwd.entropy });
     expect(state.region).toBe(Region.Region5);
-    expect(state.pressure).toBeCloseTo(0.5, 6);
+    expectBackwardValue(state.pressure, fwd.pressure, 'pressure');
+    expectBackwardValue(state.temperature, fwd.temperature, 'temperature');
   });
 
   it('routes TH input for Region 4 (two-phase)', () => {
     const fwd = solveTx(500, 0.5);
     const state = solve({ mode: 'TH', T: fwd.temperature, h: fwd.enthalpy });
-    expect(state.region).toBe(Region.Region4);
-    expect(state.quality).toBeCloseTo(0.5, 6);
+    expectRegion4RoundTrip(state, fwd);
     expect(state.surfaceTension).not.toBeNull();
     expect(state.viscosity).toBeNull();
     expect(state.thermalConductivity).toBeNull();
@@ -220,8 +259,7 @@ describe('solve() unified dispatcher', () => {
   it('routes TS input for Region 4 (two-phase)', () => {
     const fwd = solveTx(500, 0.5);
     const state = solve({ mode: 'TS', T: fwd.temperature, s: fwd.entropy });
-    expect(state.region).toBe(Region.Region4);
-    expect(state.quality).toBeCloseTo(0.5, 6);
+    expectRegion4RoundTrip(state, fwd);
     expect(state.surfaceTension).not.toBeNull();
     expect(state.viscosity).toBeNull();
     expect(state.thermalConductivity).toBeNull();

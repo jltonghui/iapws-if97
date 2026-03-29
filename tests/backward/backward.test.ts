@@ -8,6 +8,7 @@ import { region2 } from '../../src/regions/region2';
 import { solvePH } from '../../src/backward/ph';
 import { solvePS } from '../../src/backward/ps';
 import { solvePx } from '../../src/saturation/two-phase';
+import { expectRegion4RoundTrip } from './assertions.js';
 
 const TOL_T = 0.2; // K tolerance for temperature round-trip
 
@@ -39,10 +40,7 @@ describe('P-H Backward Round-Trip', () => {
     const forward = solvePx(20, 0.4);
     const result = solvePH(20, forward.enthalpy);
 
-    expect(result.region).toBe(4);
-    expect(result.temperature).toBeCloseTo(forward.temperature, 6);
-    expect(result.quality).toBeCloseTo(forward.quality!, 6);
-    expect(result.specificVolume).toBeCloseTo(forward.specificVolume, 6);
+    expectRegion4RoundTrip(result, forward, { specificVolumeTolerance: 1e-6 });
   });
 
   it('preserves the exact pressure and enthalpy inputs', () => {
@@ -83,10 +81,7 @@ describe('P-S Backward Round-Trip', () => {
     const forward = solvePx(20, 0.4);
     const result = solvePS(20, forward.entropy);
 
-    expect(result.region).toBe(4);
-    expect(result.temperature).toBeCloseTo(forward.temperature, 6);
-    expect(result.quality).toBeCloseTo(forward.quality!, 6);
-    expect(result.specificVolume).toBeCloseTo(forward.specificVolume, 6);
+    expectRegion4RoundTrip(result, forward, { specificVolumeTolerance: 1e-6 });
   });
 
   it('preserves the exact pressure and entropy inputs', () => {

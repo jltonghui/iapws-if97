@@ -7,6 +7,7 @@ import { region1 } from '../../src/regions/region1.js';
 import { region2 } from '../../src/regions/region2.js';
 import { Tc } from '../../src/constants.js';
 import { Region, IF97Error, OutOfRangeError } from '../../src/types.js';
+import { expectBackwardValue, expectRegion4RoundTrip, expectSpecificVolume } from './assertions.js';
 
 describe('detectRegionTH', () => {
   it('detects Region 1 from a known compressed-liquid state', () => {
@@ -58,8 +59,8 @@ describe('solveTH backward equations', () => {
     const backward = solveTH(forward.temperature, forward.enthalpy);
 
     expect(backward.region).toBe(Region.Region1);
-    expect(backward.temperature).toBeCloseTo(forward.temperature, 6);
-    expect(backward.pressure).toBeCloseTo(forward.pressure, 6);
+    expectBackwardValue(backward.temperature, forward.temperature, 'temperature');
+    expectBackwardValue(backward.pressure, forward.pressure, 'pressure');
   });
 
   it('round-trips a Region 2 state', () => {
@@ -67,8 +68,8 @@ describe('solveTH backward equations', () => {
     const backward = solveTH(forward.temperature, forward.enthalpy);
 
     expect(backward.region).toBe(Region.Region2);
-    expect(backward.temperature).toBeCloseTo(forward.temperature, 6);
-    expect(backward.pressure).toBeCloseTo(forward.pressure, 6);
+    expectBackwardValue(backward.temperature, forward.temperature, 'temperature');
+    expectBackwardValue(backward.pressure, forward.pressure, 'pressure');
   });
 
   it('preserves the exact target enthalpy for a fixed-temperature Region 2 solve', () => {
@@ -83,21 +84,14 @@ describe('solveTH backward equations', () => {
     const forward = solveTx(500, 0.4);
     const backward = solveTH(forward.temperature, forward.enthalpy);
 
-    expect(backward.region).toBe(Region.Region4);
-    expect(backward.temperature).toBeCloseTo(forward.temperature, 6);
-    expect(backward.pressure).toBeCloseTo(forward.pressure, 6);
-    expect(backward.quality).toBeCloseTo(forward.quality!, 6);
+    expectRegion4RoundTrip(backward, forward);
   });
 
   it('preserves a high-pressure Region 4 state above 623.15 K', () => {
     const forward = solveTx(640, 0.4);
     const backward = solveTH(forward.temperature, forward.enthalpy);
 
-    expect(backward.region).toBe(Region.Region4);
-    expect(backward.temperature).toBeCloseTo(forward.temperature, 6);
-    expect(backward.pressure).toBeCloseTo(forward.pressure, 6);
-    expect(backward.quality).toBeCloseTo(forward.quality!, 6);
-    expect(backward.specificVolume).toBeCloseTo(forward.specificVolume, 6);
+    expectRegion4RoundTrip(backward, forward, { specificVolumeTolerance: 1e-6 });
   });
 
   it('preserves saturation endpoints at x = 0 and x = 1', () => {
@@ -118,9 +112,9 @@ describe('solveTH backward equations', () => {
     const backward = solveTH(forward.temperature, forward.enthalpy);
 
     expect(backward.region).toBe(Region.Region3);
-    expect(backward.temperature).toBeCloseTo(forward.temperature, 6);
-    expect(backward.pressure).toBeCloseTo(forward.pressure, 6);
-    expect(backward.specificVolume).toBeCloseTo(forward.specificVolume, 6);
+    expectBackwardValue(backward.temperature, forward.temperature, 'temperature');
+    expectBackwardValue(backward.pressure, forward.pressure, 'pressure');
+    expectSpecificVolume(backward.specificVolume, forward.specificVolume);
   });
 
   it('round-trips a subcritical high-pressure Region 3 state', () => {
@@ -128,9 +122,9 @@ describe('solveTH backward equations', () => {
     const backward = solveTH(forward.temperature, forward.enthalpy);
 
     expect(backward.region).toBe(Region.Region3);
-    expect(backward.temperature).toBeCloseTo(forward.temperature, 6);
-    expect(backward.pressure).toBeCloseTo(forward.pressure, 6);
-    expect(backward.specificVolume).toBeCloseTo(forward.specificVolume, 6);
+    expectBackwardValue(backward.temperature, forward.temperature, 'temperature');
+    expectBackwardValue(backward.pressure, forward.pressure, 'pressure');
+    expectSpecificVolume(backward.specificVolume, forward.specificVolume);
   });
 
   it('round-trips a Region 5 state', () => {
@@ -138,9 +132,9 @@ describe('solveTH backward equations', () => {
     const backward = solveTH(forward.temperature, forward.enthalpy);
 
     expect(backward.region).toBe(Region.Region5);
-    expect(backward.temperature).toBeCloseTo(forward.temperature, 6);
-    expect(backward.pressure).toBeCloseTo(forward.pressure, 6);
-    expect(backward.specificVolume).toBeCloseTo(forward.specificVolume, 6);
+    expectBackwardValue(backward.temperature, forward.temperature, 'temperature');
+    expectBackwardValue(backward.pressure, forward.pressure, 'pressure');
+    expectSpecificVolume(backward.specificVolume, forward.specificVolume);
   });
 
   it('rejects the exact critical-point temperature', () => {
@@ -171,8 +165,8 @@ describe('solveTH backward equations', () => {
     const state = solvePT(25, T);
     const backward = solveTH(T, state.enthalpy);
 
-    expect(backward.temperature).toBeCloseTo(T, 6);
-    expect(backward.pressure).toBeCloseTo(state.pressure, 6);
+    expectBackwardValue(backward.temperature, T, 'temperature');
+    expectBackwardValue(backward.pressure, state.pressure, 'pressure');
   });
 
   it('still solves just outside the critical exclusion band from above', () => {
@@ -180,8 +174,8 @@ describe('solveTH backward equations', () => {
     const state = solvePT(25, T);
     const backward = solveTH(T, state.enthalpy);
 
-    expect(backward.temperature).toBeCloseTo(T, 6);
-    expect(backward.pressure).toBeCloseTo(state.pressure, 6);
+    expectBackwardValue(backward.temperature, T, 'temperature');
+    expectBackwardValue(backward.pressure, state.pressure, 'pressure');
   });
 
   it('throws OutOfRangeError for T below T_MIN', () => {

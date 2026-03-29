@@ -6,25 +6,30 @@ import { evalSubregion } from './region3-eval.js';
 import { REGION3_SUBREGIONS as R3 } from './region3-data.js';
 import { b3ab, b3cd, b3ef, b3gh, b3ij, b3jk, b3mn, b3op, b3qu, b3rx, b3uv, b3wx } from './boundaries.js';
 import { saturationPressure, saturationTemperature } from './region4.js';
+import { Pc } from '../constants.js';
 import { IF97Error } from '../types.js';
 
-/** Compute specific volume for Region 3 saturation boundary. x=0 liquid, x=1 vapor */
+/** Compute specific volume for Region 3 saturation boundary. x=0 liquid, x=1 vapor
+ *  Pressure thresholds from IAPWS Supplementary Release on Backward
+ *  Equations v(P,T) for Region 3, Table 1 (saturation subregion limits). */
 export function region3SatVolume(p: number, T: number, x: number): number {
   if (x === 0) {
-    if (p < 19.00881189) return evalSubregion(R3.C, p, T);
-    if (p < 21.0434) return evalSubregion(R3.S, p, T);
-    if (p < 21.9316) return evalSubregion(R3.U, p, T);
+    if (p < 19.00881189) return evalSubregion(R3.C, p, T);  // Psat(643.15 K)
+    if (p < 21.0434) return evalSubregion(R3.S, p, T);      // near P3cd
+    if (p < 21.9316) return evalSubregion(R3.U, p, T);      // near Puv
     return evalSubregion(R3.Y, p, T);
   }
-  if (p < 20.5) return evalSubregion(R3.T, p, T);
+  if (p < 20.5) return evalSubregion(R3.T, p, T);           // near P3cd
   if (p < 21.0434) return evalSubregion(R3.R, p, T);
-  if (p < 21.9009) return evalSubregion(R3.X, p, T);
+  if (p < 21.9009) return evalSubregion(R3.X, p, T);        // near Pwx
   return evalSubregion(R3.Z, p, T);
 }
 
-/** Compute specific volume for Region 3 from P and T using subregion equations. */
+/** Compute specific volume for Region 3 from P and T using subregion equations.
+ *  Pressure thresholds from IAPWS Supplementary Release on Backward
+ *  Equations v(P,T) for Region 3, Figures 2–5. */
 export function region3Volume(p: number, T: number): number {
-  if (p > 40) {
+  if (p > 40) {  // Suppl. Release Fig. 2: subregions A/B
     return T <= b3ab(p) ? evalSubregion(R3.A, p, T) : evalSubregion(R3.B, p, T);
   }
   if (p > 25) {
@@ -74,13 +79,13 @@ export function region3Volume(p: number, T: number): number {
     if (T <= tqu) return evalSubregion(R3.Q, p, T);
     if (T <= trx) {
       const tef = b3ef(p), twx = b3wx(p), tuv = b3uv(p);
-      if (p > 22.11) {
+      if (p > 22.11) {   // Suppl. Release Fig. 5 boundary
         if (T <= tuv) return evalSubregion(R3.U, p, T);
         if (T <= tef) return evalSubregion(R3.V, p, T);
         if (T <= twx) return evalSubregion(R3.W, p, T);
         return evalSubregion(R3.X, p, T);
       }
-      if (p > 22.064) {
+      if (p > Pc) {      // above critical pressure → no saturation line
         if (T <= tuv) return evalSubregion(R3.U, p, T);
         if (T <= tef) return evalSubregion(R3.Y, p, T);
         if (T <= twx) return evalSubregion(R3.Z, p, T);

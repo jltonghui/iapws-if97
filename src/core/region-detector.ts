@@ -8,6 +8,7 @@ import { region1 } from '../regions/region1.js';
 import { region2 } from '../regions/region2.js';
 import { region5 } from '../regions/region5.js';
 import { saturationEndpointsAtTemperature } from '../saturation/common.js';
+import { tryRegion4HSState } from '../saturation/region4-hs.js';
 import type { BasicProperties, CoefficientTable } from '../types.js';
 import { Region } from '../types.js';
 import { bracketedNewton } from '../solvers/bracketed-newton.js';
@@ -38,6 +39,13 @@ export function detectRegionPT(p: number, T: number): Region | -1 {
  * Detect region for P-H inputs.
  */
 export function detectRegionPH(p: number, h: number): Region | -1 {
+  if (p >= C.Pt && p < C.Pc) {
+    const endpoints = saturationEndpointsAtTemperature(saturationTemperature(p));
+    if (isClose(h, endpoints.liquid.enthalpy) || isClose(h, endpoints.vapor.enthalpy)) {
+      return Region.Region4;
+    }
+  }
+
   if (p >= C.P_MIN && p <= C.B23_P_MIN) {
     const Tsat = saturationTemperature(p);
     const h14 = region1(p, Tsat).enthalpy;
@@ -67,6 +75,13 @@ export function detectRegionPH(p: number, h: number): Region | -1 {
  * Detect region for P-S inputs.
  */
 export function detectRegionPS(p: number, s: number): Region | -1 {
+  if (p >= C.Pt && p < C.Pc) {
+    const endpoints = saturationEndpointsAtTemperature(saturationTemperature(p));
+    if (isClose(s, endpoints.liquid.entropy) || isClose(s, endpoints.vapor.entropy)) {
+      return Region.Region4;
+    }
+  }
+
   if (p >= C.P_MIN && p <= C.B23_P_MIN) {
     const Tsat = saturationTemperature(p);
     const smin = region1(p, 273.15).entropy;
@@ -176,6 +191,24 @@ function detectRegionByTemperatureProperty(
   const liquidProperty = propertyOf(endpoints.liquid, property);
   const vaporProperty = propertyOf(endpoints.vapor, property);
 
+  if (T < C.Tt) {
+    if (inRange(
+      value,
+      liquidProperty,
+      propertyOf(region1(C.P_MAX, T), property),
+    )) {
+      return Region.Region1;
+    }
+
+    return inRange(
+      value,
+      vaporProperty,
+      propertyOf(region2(C.P_MIN, T), property),
+    )
+      ? Region.Region2
+      : -1;
+  }
+
   if (inRange(value, liquidProperty, vaporProperty)) {
     return Region.Region4;
   }
@@ -263,6 +296,16 @@ export function detectRegionTH(T: number, h: number): Region | -1 {
   const endpoints = saturationEndpointsAtTemperature(T);
   const hf = endpoints.liquid.enthalpy;
   const hg = endpoints.vapor.enthalpy;
+
+  if (T < C.Tt) {
+    if (inRange(h, hf, region1(C.P_MAX, T).enthalpy)) {
+      return Region.Region1;
+    }
+
+    return inRange(h, hg, region2(C.P_MIN, T).enthalpy)
+      ? Region.Region2
+      : -1;
+  }
 
   // Exact saturation boundary: snap to Region 4 immediately.
   if (isClose(h, hf) || isClose(h, hg)) {
@@ -503,11 +546,17 @@ export function detectRegionHS(h: number, s: number): Region | -1 {
   const sTPmax = region2(100, 1073.15).entropy;
   const s2ab = region2(4, 1073.15).entropy;
 
-  const _sL = region1(C.P_MIN, 273.15);
+  const region4State = tryRegion4HSState(h, s);
+  if (region4State !== null) {
+    return Region.Region4;
+  }
+
+  const triplePointEndpoints = saturationEndpointsAtTemperature(C.Tt);
+  const _sL = triplePointEndpoints.liquid;
   const h4l = _sL.enthalpy;
   const s4l = _sL.entropy;
 
-  const _sV = region2(C.P_MIN, 273.15);
+  const _sV = triplePointEndpoints.vapor;
   const h4v = _sV.enthalpy;
   const s4v = _sV.entropy;
 
@@ -558,8 +607,8 @@ export function detectRegionHS(h: number, s: number): Region | -1 {
     if (h >= hs && h <= hmax) return Region.Region3;
   }
 
-  // Zone 4: R3_CRT_S < s < B23_S_MIN (Region 3 / Region 4)
-  else if (s > C.R3_S_CRT && s < C.B23_S_MIN) {
+  // Zone 4: R3_CRT_S < s < B23_S_CURVE_MIN (Region 3 / Region 4)
+  else if (s > C.R3_S_CRT && s < C.B23_S_CURVE_MIN) {
     const hmin = hSatLow(s);
     const hs = h2c3bSat(s);
     const hmax = 2800; // generous upper bound for R3
@@ -568,8 +617,8 @@ export function detectRegionHS(h: number, s: number): Region | -1 {
     if (h >= hs && h <= hmax) return Region.Region3;
   }
 
-  // Zone 5: B23_S_MIN <= s < B23_S_MAX (Region 2 / Region 3 / Region 4)
-  else if (s >= C.B23_S_MIN && s < C.B23_S_MAX) {
+  // Zone 5: B23_S_CURVE_MIN <= s < B23_S_CURVE_MAX (Region 2 / Region 3 / Region 4)
+  else if (s >= C.B23_S_CURVE_MIN && s < C.B23_S_CURVE_MAX) {
     const hmin = hSatLow(s);
     const hs = h2c3bSat(s);
     const h23max = region2(100, 863.15).enthalpy;
@@ -589,8 +638,8 @@ export function detectRegionHS(h: number, s: number): Region | -1 {
     if (h23max <= h && h <= hmax) return Region.Region2;
   }
 
-  // Zone 6: B23_S_MAX <= s < 5.85 (Region 2 / Region 4)
-  else if (s >= C.B23_S_MAX && s < 5.85) {
+  // Zone 6: B23_S_CURVE_MAX <= s < R2_S_CRT (Region 2 / Region 4)
+  else if (s >= C.B23_S_CURVE_MAX && s < C.R2_S_CRT) {
     const hmin = hSatLow(s);
     const hs = h2c3bSat(s);
     const hmax = region2(100, 1073.15).enthalpy;
@@ -599,8 +648,8 @@ export function detectRegionHS(h: number, s: number): Region | -1 {
     if (hs <= h && h <= hmax) return Region.Region2;
   }
 
-  // Zone 7: 5.85 <= s < sTPmax (Region 2 / Region 4, use h2abSat)
-  else if (s >= 5.85 && s < sTPmax) {
+  // Zone 7: R2_S_CRT <= s < sTPmax (Region 2 / Region 4, use h2abSat)
+  else if (s >= C.R2_S_CRT && s < sTPmax) {
     const hmin = hSatLow(s);
     const hs = h2abSat(s);
     const hmax = region2(100, 1073.15).enthalpy;
@@ -631,7 +680,7 @@ export function detectRegionHS(h: number, s: number): Region | -1 {
 
   // Zone 10: s4v <= s <= smax (Region 2 only, superheated low-P)
   else if (s >= s4v && s <= smax) {
-    const hmin = region2(C.P_MIN, 273.15).enthalpy;
+    const hmin = h4v;
     const hmax = region2(C.P_MIN, 1073.15).enthalpy;
 
     if (hmin <= h && h <= hmax) return Region.Region2;

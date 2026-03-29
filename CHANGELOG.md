@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## 2.1.1
 
-- fix some issues
+- fix some issues: enhance end-points process
 
 ## 2.1.0
 

@@ -20,11 +20,11 @@ import { nelderMead } from '../solvers/nelder-mead.js';
 import { solvePH } from './ph.js';
 import { validateBackwardState } from './solution-validation.js';
 import {
-  mixSaturationState,
-  qualityFromSaturationProperty,
-  saturationEndpointsAtPressure,
-  saturationEndpointsAtTemperature,
-} from '../saturation/common.js';
+  tryRegion4HSState,
+} from '../saturation/region4-hs.js';
+import {
+  assertCriticalRegion4HSInput,
+} from '../saturation/region4-boundaries.js';
 
 // ─── Backward Polynomial Evaluator ─────────────────────────────────────────
 
@@ -178,29 +178,6 @@ function r3Phs(h: number, s: number): number {
   return r3bPhs(h, s);
 }
 
-// ─── Region 4 Tsat(h,s) — Eq. 9 ────────────────────────────────────────────
-
-const R4_THS: CoefficientTable = [
-  [0,0,0.179882673606601],[0,3,-0.267507455199603],[0,12,1.1627672261266],
-  [1,0,0.147545428713616],[1,1,-0.512871635973248],[1,2,0.421333567697984],
-  [1,5,0.56374952218987],[2,0,0.429274443819153],[2,5,-3.3570455214214],
-  [2,8,10.8890916499278],[3,0,-0.248483390456012],[3,2,0.30415322190639],
-  [3,3,-0.494819763939905],[3,4,1.07551674933261],[4,0,0.0733888415457688],
-  [4,1,0.0140170545411085],[5,1,-0.106110975998808],[5,2,0.0168324361811875],
-  [5,4,1.25028363714877],[5,16,1013.16840309509],[6,6,-1.51791558000712],
-  [6,8,52.4277865990866],[6,22,23049.5545563912],[8,1,0.0249459806365456],
-  [10,20,2107964.67412137],[10,36,3.66836848613065e8],[12,24,-1.44814105365163e8],
-  [14,1,-1.7927637300359e-3],[14,28,4.89955602100459e9],[16,12,471.262212070518],
-  [16,32,-8.29294390198652e10],[18,14,-1715.45662263191],[18,22,3557776.82973575],
-  [18,36,5.86062760258436e11],[20,24,-1.29887635078195e7],[28,36,3.17247449371057e10],
-] as const;
-
-function r4Ths(h: number, s: number): number {
-  const mu = h / 2800;
-  const sig = s / 9.2;
-  return 550 * evalPoly(R4_THS, 0.119, 1.07, mu, sig);
-}
-
 // ─── Main HS Solver ─────────────────────────────────────────────────────────
 
 /**
@@ -214,6 +191,19 @@ export function solveHS(h: number, s: number): BasicProperties {
   }
   if (s < C.S_MIN || s > C.S_MAX) {
     throw new OutOfRangeError('Entropy', s, C.S_MIN, C.S_MAX);
+  }
+  assertCriticalRegion4HSInput(h, s, 'solveHS');
+
+  const region4State = tryRegion4HSState(h, s);
+  if (region4State !== null) {
+    return validateBackwardState(
+      region4State,
+      [
+        { label: 'enthalpy', expected: h },
+        { label: 'entropy', expected: s },
+      ],
+      { solverName: 'solveHS', expectedRegion: Region.Region4 },
+    );
   }
 
   const region = detectRegionHS(h, s);
@@ -272,59 +262,7 @@ export function solveHS(h: number, s: number): BasicProperties {
       );
     }
     case Region.Region4: {
-      // Critical point check
-      if (Math.abs(s - C.R3_S_CRT) < 1e-6 && Math.abs(h - C.R3_H_CRT) < 1e-6) {
-        return region3ByRhoT(C.RHOc, C.Tc);
-      }
-
-      let T = r4Ths(h, s);
-      T = Math.max(273.15, Math.min(T, C.Tc - 0.001));
-      const temperature = newtonRaphson(
-        (temperatureGuess) => {
-          const endpoints = saturationEndpointsAtTemperature(
-            Math.max(273.15, Math.min(temperatureGuess, C.Tc - 0.001)),
-          );
-          const xh = qualityFromSaturationProperty(
-            endpoints.liquid.enthalpy,
-            endpoints.vapor.enthalpy,
-            h,
-          );
-          const xs = qualityFromSaturationProperty(
-            endpoints.liquid.entropy,
-            endpoints.vapor.entropy,
-            s,
-          );
-          return xh - xs;
-        },
-        T,
-      );
-
-      const finalTemperature = Math.max(273.15, Math.min(temperature, C.Tc - 0.001));
-      const endpoints = saturationEndpointsAtTemperature(finalTemperature);
-      const quality = (
-        qualityFromSaturationProperty(
-          endpoints.liquid.enthalpy,
-          endpoints.vapor.enthalpy,
-          h,
-        ) +
-        qualityFromSaturationProperty(
-          endpoints.liquid.entropy,
-          endpoints.vapor.entropy,
-          s,
-        )
-      ) / 2;
-
-      return validateBackwardState(
-        mixSaturationState(
-          saturationEndpointsAtPressure(endpoints.pressure),
-          quality,
-        ),
-        [
-          { label: 'enthalpy', expected: h },
-          { label: 'entropy', expected: s },
-        ],
-        { solverName: 'solveHS', expectedRegion: Region.Region4 },
-      );
+      throw new IF97Error('solveHS identified Region 4 but failed to construct a valid saturation state');
     }
     case Region.Region5: {
       const sol = nelderMead(

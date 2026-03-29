@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ionizationConstant } from '../../src/transport/properties.js';
+import { expectDigitsClose } from '../assertions.js';
 
 describe('ionizationConstant', () => {
   const cases = [
@@ -13,7 +14,7 @@ describe('ionizationConstant', () => {
 
   for (const { T, rho, pKw } of cases) {
     it(`matches IAPWS R11-24 at T=${T} K, rho=${rho} kg/m^3`, () => {
-      expect(ionizationConstant(T, rho)).toBeCloseTo(pKw, 6);
+      expectDigitsClose(ionizationConstant(T, rho)!, pKw, 6);
     });
   }
 });

@@ -7,13 +7,17 @@
  */
 import type { BasicProperties } from '../types.js';
 import { Region } from '../types.js';
-import { Pc, R2_T_MIN, RHOc } from '../constants.js';
+import { Pc, R2_T_MIN, RHOc, Tt } from '../constants.js';
 import { region1 } from '../regions/region1.js';
 import { region2 } from '../regions/region2.js';
 import { region3ByRhoT } from '../regions/region3.js';
 import { saturationPressure, saturationTemperature } from '../regions/region4.js';
 import { region3SatVolume } from '../regions/region3-subregions.js';
 import { newtonRaphson } from '../solvers/newton-raphson.js';
+import {
+  normalizeRegion4Pressure,
+  normalizeRegion4Temperature,
+} from './region4-boundaries.js';
 
 /** Saturated liquid and vapour properties at a given saturation state. */
 export interface SaturationEndpoints {
@@ -59,27 +63,28 @@ function clampQuality(x: number): number {
  * @param p - Saturation pressure [MPa]
  */
 export function saturationEndpointsAtPressure(p: number): SaturationEndpoints {
-  const temperature = saturationTemperature(p);
+  const pressure = normalizeRegion4Pressure(p);
+  const temperature = normalizeRegion4Temperature(saturationTemperature(pressure));
 
-  if (Math.abs(p - Pc) < 1e-10) {
+  if (pressure === Pc) {
     const state = region3ByRhoT(RHOc, temperature);
-    return { pressure: p, temperature, liquid: state, vapor: state };
+    return { pressure, temperature, liquid: state, vapor: state };
   }
 
   if (temperature > R2_T_MIN) {
     return {
-      pressure: p,
+      pressure,
       temperature,
-      liquid: region3ByRhoT(solveR3Density(p, temperature, 0), temperature),
-      vapor: region3ByRhoT(solveR3Density(p, temperature, 1), temperature),
+      liquid: region3ByRhoT(solveR3Density(pressure, temperature, 0), temperature),
+      vapor: region3ByRhoT(solveR3Density(pressure, temperature, 1), temperature),
     };
   }
 
   return {
-    pressure: p,
+    pressure,
     temperature,
-    liquid: region1(p, temperature),
-    vapor: region2(p, temperature),
+    liquid: region1(pressure, temperature),
+    vapor: region2(pressure, temperature),
   };
 }
 
@@ -88,7 +93,19 @@ export function saturationEndpointsAtPressure(p: number): SaturationEndpoints {
  * @param T - Saturation temperature [K]
  */
 export function saturationEndpointsAtTemperature(T: number): SaturationEndpoints {
-  return saturationEndpointsAtPressure(saturationPressure(T));
+  const temperature = normalizeRegion4Temperature(T);
+  const pressure = normalizeRegion4Pressure(saturationPressure(temperature));
+
+  if (temperature < Tt) {
+    return {
+      pressure,
+      temperature,
+      liquid: region1(pressure, temperature),
+      vapor: region2(pressure, temperature),
+    };
+  }
+
+  return saturationEndpointsAtPressure(pressure);
 }
 
 /**

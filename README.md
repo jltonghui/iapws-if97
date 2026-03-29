@@ -2,15 +2,13 @@
 
 Calculate industrial water and steam properties in Node.js and TypeScript, based on the [IAPWS-IF97](https://www.iapws.org/) standard (International Association for the Properties of Water and Steam — Industrial Formulation 1997).
 
-The library provides forward and backward state solvers, saturation solvers, and transport-property helpers for engineering calculations involving water and steam.
+This library provides forward and backward state solvers, saturation solvers, and transport-property helpers for engineering calculations involving water and steam.
 
 ## Features
 
 - Covers IF97 Regions 1–5, including high-temperature Region 5
 - Forward, backward, and saturation solvers behind a consistent API
 - Transport properties: viscosity, thermal conductivity, surface tension, dielectric constant, and ionization constant
-- Typed ESM package with bundled TypeScript declarations
-- Clean export split in `2.0`: root import for main solvers, subpaths for advanced helpers
 - Verified against official IAPWS tables and published engineering references
 
 ## Project Origin
@@ -110,13 +108,14 @@ type SteamState = {
 };
 ```
 
-`SteamState` always uses canonical property names. Input aliases like `p`/`pressure` do not create duplicate fields.
+`SteamState` always uses canonical property names. 
 
 **Notes:**
 
 - `quality` is `null` for single-phase states — it is only defined on the saturation line.
 - In two-phase mixtures (`0 < x < 1`), `cp`, `cv`, `speedOfSound`, `isobaricExpansion`, `isothermalCompressibility`, `viscosity`, `thermalConductivity`, `dielectricConstant`, and `ionizationConstant` are `null`.
 - Saturation endpoints (`x = 0` or `x = 1`) still expose single-phase transport properties even though they carry Region 4 metadata.
+- `solvePT(p, T)` is a single-phase solver. On the subcritical saturation boundary it resolves to the liquid side.
 - `surfaceTension` is only available for Region 4 saturation states below the critical point; otherwise `null`.
 - `density` is provided directly — no need to invert `specificVolume`.
 - `ionizationConstant` is `null` outside the IAPWS validity range for that correlation.
@@ -141,47 +140,17 @@ type SteamState = {
 
 Any field typed as `number | null` returns `null` when the property is undefined for the given state.
 
-## Advanced Imports
+## Saturation Endpoint
 
-The package root exports only the main solver API, core types, and error classes.
-Lower-level helpers are available through dedicated subpaths:
-
-- `iapws-if97/transport`: `viscosity`, `thermalConductivity`, `surfaceTension`, `dielectricConstant`, `ionizationConstant`
-- `iapws-if97/regions`: `region1`, `region2`, `region3ByRhoT`, `region5`
-- `iapws-if97/saturation`: `saturationPressure`, `saturationTemperature`
-- `iapws-if97/boundaries`: `boundary23_T_to_P`, `boundary23_P_to_T`, `region3Volume`, `region3SatVolume`
-- `iapws-if97/detect`: `detectRegionPT`, `detectRegionPH`, `detectRegionPS`, `detectRegionHS`, `detectRegionTH`, `detectRegionTS`
-
-Examples:
-
-```ts
-import { viscosity } from 'iapws-if97/transport';
-import { region1 } from 'iapws-if97/regions';
-import { saturationTemperature } from 'iapws-if97/saturation';
-import { detectRegionPT } from 'iapws-if97/detect';
-```
-
-## Migration to 2.0
-
-Version `2.0` limits the root export to the main solver API.
-If you imported lower-level helpers from the package root in `1.x`, update them to use subpath imports:
-
-- `import { viscosity } from 'iapws-if97'` → `import { viscosity } from 'iapws-if97/transport'`
-- `import { region1 } from 'iapws-if97'` → `import { region1 } from 'iapws-if97/regions'`
-- `import { saturationTemperature } from 'iapws-if97'` → `import { saturationTemperature } from 'iapws-if97/saturation'`
-- `import { detectRegionPT } from 'iapws-if97'` → `import { detectRegionPT } from 'iapws-if97/detect'`
-
-## Advanced Usage Notes
-
-- `region1`, `region2`, `region3ByRhoT`, and `region5` return core thermodynamic properties **without** transport-property enrichment.
-- `detectRegion*` helpers return a `Region` enum value, or `-1` if the input falls outside IF97 validity.
-- `viscosity(T, rho)` and `dielectricConstant(T, rho)` take temperature and density directly — not a `SteamState`.
-- `ionizationConstant(T, rho)` also takes temperature and density; returns `null` outside its validity range.
-- `thermalConductivity(T, rho, cp?, cv?, drhodP_T?, mu?)` supports two calling levels:
-  - **Minimal:** pass `T` and `rho` for base conductivity.
-  - **Full:** additionally pass `cp`, `cv`, `drhodP_T`, and `mu` to include the IAPWS 2011 critical-enhancement term.
-- `surfaceTension(T)` returns `null` outside its valid temperature range. It applies only along the saturation line.
-- `solveTH(T, h)` prefers the compressed-liquid branch when both a subcritical liquid state and a two-phase state are possible at the same `T` and `h`. Exact saturation endpoints still return Region 4 metadata.
+- Low-level Region 4 helpers stay mathematically permissive and high-level saturation state solvers are stricter:
+  - `solvePx(p, x)` accepts `Pt ≤ p < Pc`
+  - `solveTx(T, x)` accepts `Tt = 273.16 K ≤ T < Tc`
+- The true triple point is supported as a saturation-state boundary:
+  - `solvePx(Pt, x)` is valid
+  - `solveTx(Tt, x)` is valid
+- `273.15 K` is treated as a low-level extrapolation boundary only.
+- The exact critical point is never returned as a Region 4 state.
+- `solveTH(T, h)` and `solveTS(T, s)` keep a small exclusion band around `Tc` and reject inputs within `0.001 K` of the critical temperature.
 
 ## Errors and Limits
 
@@ -192,16 +161,6 @@ The library throws typed errors:
 | `OutOfRangeError` | Input is outside the supported IF97 range |
 | `ConvergenceError` | An internal iterative solve failed to converge |
 | `IF97Error` | Base class for all library-specific errors |
-
-**Boundary rules:**
-
-- `solvePT(p, T)` covers the IF97 industrial range up to `100 MPa` / `2273.15 K`. Region 5 is limited to `50 MPa`.
-- The exact critical point (`22.064 MPa`, `647.096 K`) is rejected because derivative properties are singular there.
-- `solvePx(p, x)` requires the saturation line: `Pt ≤ p ≤ Pc`.
-- `solveTx(T, x)` requires the saturation line: `273.15 K ≤ T ≤ Tc`.
-- `solveTH(T, h)` and `solveTS(T, s)` support Regions 1–5. Inputs within `0.001 K` of the critical temperature are rejected.
-- `x` must be in `[0, 1]` for two-phase calculations.
-- Undefined properties are returned as `null`, never `NaN`.
 
 ## Validity Notes
 
@@ -241,16 +200,17 @@ This Mollier `h-s` diagram was generated with `iapws-if97` as a practical end-to
 
 Compares saturation states against *ASME International Steam Tables for Industrial Use*, 3rd ed., Table S-2 ("Properties of Saturated Water and Steam — Pressure").
 Each case checks 7 values: saturation temperature, liquid/vapor specific volume, enthalpy, and entropy.
+The snapshot below reflects the current `tests/standards-asme` regression run.
 
 | ASME case | Pressure (MPa) | Points checked | Max relative error |
 | --- | ---: | ---: | ---: |
-| Table S-2 @ 0.01 MPa | 0.01 | 7 | 0.02580% |
-| Table S-2 @ 0.10 MPa | 0.10 | 7 | 0.01417% |
-| Table S-2 @ 1.00 MPa | 1.00 | 7 | 0.02074% |
-| Table S-2 @ 5.0 MPa | 5.0 | 7 | 0.03154% |
-| Table S-2 @ 10.0 MPa | 10.0 | 7 | 0.02616% |
-| Table S-2 @ 20.0 MPa | 20.0 | 7 | 0.01730% |
-| Overall worst case | - | 42 | 0.03154% |
+| Table S-2 @ 0.01 MPa | 0.01 | 7 | 0.0257993% |
+| Table S-2 @ 0.10 MPa | 0.10 | 7 | 0.0141744% |
+| Table S-2 @ 1.00 MPa | 1.00 | 7 | 0.0207405% |
+| Table S-2 @ 5.0 MPa | 5.0 | 7 | 0.0315405% |
+| Table S-2 @ 10.0 MPa | 10.0 | 7 | 0.0261599% |
+| Table S-2 @ 20.0 MPa | 20.0 | 7 | 0.0173004% |
+| Overall worst case | - | 42 | 0.0315405% |
 
 The current ASME regression threshold is `maxRelativeError < 5e-4` (less than `0.05%`).
 
@@ -258,6 +218,7 @@ The current ASME regression threshold is `maxRelativeError < 5e-4` (less than `0
 
 Compares superheated-steam states against *GB/T 34060-2017*, Table A.3(续), page 55.
 Each case checks 4 values at `10 MPa`: specific volume, enthalpy, entropy, and speed of sound.
+The snapshot below reflects the current `tests/standards-cn` regression run.
 
 | GB/T case | Pressure (MPa) | Temperature (°C) | Points checked | Max relative error |
 | --- | ---: | ---: | ---: | ---: |

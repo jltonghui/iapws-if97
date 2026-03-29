@@ -7,6 +7,7 @@ import { detectRegionHS } from '../../src/core/region-detector.js';
 import { IF97Error, Region, OutOfRangeError } from '../../src/types.js';
 import { solveHS } from '../../src/backward/hs.js';
 import { solvePx } from '../../src/saturation/two-phase.js';
+import { expectRegion4RoundTrip } from './assertions.js';
 
 describe('detectRegionHS', () => {
   it('detects Region 1 from known R1 state', () => {
@@ -125,11 +126,12 @@ describe('solveHS backward equations', () => {
     const forward = solvePx(20, 0.4);
     const backward = solveHS(forward.enthalpy, forward.entropy);
 
-    expect(backward.region).toBe(Region.Region4);
-    expect(backward.pressure).toBeCloseTo(forward.pressure, 5);
-    expect(backward.temperature).toBeCloseTo(forward.temperature, 5);
-    expect(backward.quality).toBeCloseTo(forward.quality!, 5);
-    expect(backward.specificVolume).toBeCloseTo(forward.specificVolume, 5);
+    expectRegion4RoundTrip(backward, forward, {
+      pressureTolerance: 1e-5,
+      temperatureTolerance: 1e-5,
+      qualityTolerance: 1e-5,
+      specificVolumeTolerance: 1e-5,
+    });
   });
 
   it('throws OutOfRangeError when h is outside the supported range', () => {

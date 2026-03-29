@@ -15,13 +15,14 @@ import {
   boundary23_P_to_T,
   boundary23_T_to_P,
 } from '../../src/regions/boundaries.js';
+import { expectDigitsClose } from '../assertions.js';
 
 describe('region boundary utilities', () => {
   it('B23 pressure/temperature transforms are approximately inverse on the boundary', () => {
     const temperature = 650;
     const pressure = boundary23_T_to_P(temperature);
 
-    expect(boundary23_P_to_T(pressure)).toBeCloseTo(temperature, 9);
+    expectDigitsClose(boundary23_P_to_T(pressure), temperature, 9);
   });
 
   it('evaluates Region 3 subregion boundaries to finite temperatures', () => {

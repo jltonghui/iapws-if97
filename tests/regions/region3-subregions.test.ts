@@ -5,6 +5,7 @@ import { REGION3_SUBREGIONS } from '../../src/regions/region3-data.js';
 import { region3ByRhoT } from '../../src/regions/region3.js';
 import { region3SatVolume, region3Volume } from '../../src/regions/region3-subregions.js';
 import { b3ab, b3cd, b3ef, b3gh, b3ij, b3jk, b3mn, b3op, b3qu, b3rx, b3uv, b3wx } from '../../src/regions/boundaries.js';
+import { expectDigitsClose } from '../assertions.js';
 
 function midpoint(a: number, b: number): number {
   return (a + b) / 2;
@@ -14,7 +15,7 @@ function expectConsistentRegion3Volume(p: number, T: number) {
   const v = region3Volume(p, T);
   const state = region3ByRhoT(1 / v, T);
   expect(v).toBeGreaterThan(0);
-  expect(state.pressure).toBeCloseTo(p, 2);
+  expectDigitsClose(state.pressure, p, 2);
 }
 
 describe('Region 3 subregion dispatch', () => {
@@ -98,7 +99,7 @@ describe('Region 3 subregion dispatch', () => {
 
     for (const p of liquidCases) {
       const T = saturationTemperature(p);
-      expect(region3SatVolume(p, T, 0)).toBeCloseTo(solvePx(p, 0).specificVolume, 5);
+      expectDigitsClose(region3SatVolume(p, T, 0), solvePx(p, 0).specificVolume, 5);
     }
 
     for (const p of vaporBranchOnlyCases) {
@@ -108,7 +109,7 @@ describe('Region 3 subregion dispatch', () => {
 
     for (const p of vaporCases) {
       const T = saturationTemperature(p);
-      expect(region3SatVolume(p, T, 1)).toBeCloseTo(solvePx(p, 1).specificVolume, 5);
+      expectDigitsClose(region3SatVolume(p, T, 1), solvePx(p, 1).specificVolume, 5);
     }
   });
 });

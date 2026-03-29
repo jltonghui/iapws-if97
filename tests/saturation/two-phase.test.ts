@@ -2,8 +2,10 @@ import { describe, it, expect } from 'vitest';
 import { solvePx, solveTx } from '../../src/saturation/two-phase.js';
 import { region1 } from '../../src/regions/region1.js';
 import { region2 } from '../../src/regions/region2.js';
-import { saturationTemperature } from '../../src/regions/region4.js';
-import { Region } from '../../src/types.js';
+import { saturationPressure, saturationTemperature } from '../../src/regions/region4.js';
+import { Pc, Pt, Tc, Tt } from '../../src/constants.js';
+import { IF97Error, OutOfRangeError, Region } from '../../src/types.js';
+import { expectDigitsClose } from '../assertions.js';
 
 describe('solvePx', () => {
   it('x=0 gives saturated liquid (subcritical)', () => {
@@ -12,7 +14,7 @@ describe('solvePx', () => {
     expect(state.quality).toBe(0);
     const Tsat = saturationTemperature(1);
     const liq = region1(1, Tsat);
-    expect(state.enthalpy).toBeCloseTo(liq.enthalpy, 3);
+    expectDigitsClose(state.enthalpy, liq.enthalpy, 3);
   });
 
   it('x=1 gives saturated vapour (subcritical)', () => {
@@ -21,7 +23,7 @@ describe('solvePx', () => {
     expect(state.quality).toBe(1);
     const Tsat = saturationTemperature(1);
     const vap = region2(1, Tsat);
-    expect(state.enthalpy).toBeCloseTo(vap.enthalpy, 3);
+    expectDigitsClose(state.enthalpy, vap.enthalpy, 3);
   });
 
   it('x=0.5 gives mixture properties', () => {
@@ -31,7 +33,7 @@ describe('solvePx', () => {
     const Tsat = saturationTemperature(1);
     const liq = region1(1, Tsat);
     const vap = region2(1, Tsat);
-    expect(state.enthalpy).toBeCloseTo((liq.enthalpy + vap.enthalpy) / 2, 3);
+    expectDigitsClose(state.enthalpy, (liq.enthalpy + vap.enthalpy) / 2, 3);
   });
 
   it('high-P x=0 gives R3 saturated liquid', () => {
@@ -58,6 +60,24 @@ describe('solvePx', () => {
     expect(state.isobaricExpansion).toBeNull();
     expect(state.isothermalCompressibility).toBeNull();
   });
+
+  it('accepts the triple-point pressure endpoints', () => {
+    const liquid = solvePx(Pt, 0);
+    const vapor = solvePx(Pt, 1);
+
+    expect(liquid.region).toBe(Region.Region4);
+    expect(liquid.quality).toBe(0);
+    expect(liquid.temperature).toBe(Tt);
+
+    expect(vapor.region).toBe(Region.Region4);
+    expect(vapor.quality).toBe(1);
+    expect(vapor.temperature).toBe(Tt);
+  });
+
+  it.each([0, 0.5, 1])('rejects the critical-point pressure at x=%s', (x) => {
+    expect(() => solvePx(Pc, x)).toThrow(IF97Error);
+    expect(() => solvePx(Pc, x)).toThrow(/critical/i);
+  });
 });
 
 describe('solveTx', () => {
@@ -77,5 +97,37 @@ describe('solveTx', () => {
     const state = solveTx(300, 1);
     expect(state.region).toBe(Region.Region4);
     expect(state.quality).toBe(1);
+  });
+
+  it('accepts the true triple-point temperature endpoints', () => {
+    const liquid = solveTx(Tt, 0);
+    const vapor = solveTx(Tt, 1);
+
+    expect(liquid.region).toBe(Region.Region4);
+    expect(liquid.pressure).toBe(Pt);
+    expect(liquid.quality).toBe(0);
+
+    expect(vapor.region).toBe(Region.Region4);
+    expect(vapor.pressure).toBe(Pt);
+    expect(vapor.quality).toBe(1);
+  });
+
+  it.each([0, 0.5, 1])('rejects the critical-point temperature at x=%s', (x) => {
+    expect(() => solveTx(Tc, x)).toThrow(IF97Error);
+    expect(() => solveTx(Tc, x)).toThrow(/critical/i);
+  });
+
+  it('rejects the 273.15 K extrapolation boundary as a state input', () => {
+    expect(() => solveTx(273.15, 0.5)).toThrow(OutOfRangeError);
+  });
+});
+
+describe('region4 endpoint normalization', () => {
+  it('normalizes saturation pressure at the critical temperature', () => {
+    expect(saturationPressure(Tc)).toBe(Pc);
+  });
+
+  it('normalizes saturation temperature at the triple-point pressure', () => {
+    expect(saturationTemperature(Pt)).toBe(Tt);
   });
 });

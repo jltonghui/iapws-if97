@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { bracketedNewton } from '../../src/solvers/bracketed-newton.js';
 import { ConvergenceError, IF97Error } from '../../src/types.js';
-import { expectDigitsClose } from '../assertions.js';
+import { expectDigitsClose } from '../helpers/assertions.js';
 
 describe('bracketedNewton', () => {
   it('finds root of a linear function', () => {

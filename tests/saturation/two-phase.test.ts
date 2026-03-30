@@ -5,7 +5,7 @@ import { region2 } from '../../src/regions/region2.js';
 import { saturationPressure, saturationTemperature } from '../../src/regions/region4.js';
 import { Pc, Pt, Tc, Tt } from '../../src/constants.js';
 import { IF97Error, OutOfRangeError, Region } from '../../src/types.js';
-import { expectDigitsClose } from '../assertions.js';
+import { expectDigitsClose } from '../helpers/assertions.js';
 
 describe('solvePx', () => {
   it('x=0 gives saturated liquid (subcritical)', () => {
@@ -78,6 +78,11 @@ describe('solvePx', () => {
     expect(() => solvePx(Pc, x)).toThrow(IF97Error);
     expect(() => solvePx(Pc, x)).toThrow(/critical/i);
   });
+
+  it('rejects out-of-range quality inputs', () => {
+    expect(() => solvePx(1, -0.01)).toThrow(OutOfRangeError);
+    expect(() => solvePx(1, 1.01)).toThrow(OutOfRangeError);
+  });
 });
 
 describe('solveTx', () => {
@@ -119,6 +124,11 @@ describe('solveTx', () => {
 
   it('rejects the 273.15 K extrapolation boundary as a state input', () => {
     expect(() => solveTx(273.15, 0.5)).toThrow(OutOfRangeError);
+  });
+
+  it('rejects out-of-range temperature and quality inputs', () => {
+    expect(() => solveTx(200, 0.5)).toThrow(OutOfRangeError);
+    expect(() => solveTx(700, 1.5)).toThrow(OutOfRangeError);
   });
 });
 

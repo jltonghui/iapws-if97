@@ -29,7 +29,12 @@ export function solveRegion3PTBasic(p: number, T: number): BasicProperties {
 
   const v0 = region3Volume(p, T);
   const rho = newtonRaphson(
-    (rhoGuess) => region3ByRhoT(rhoGuess, T).pressure - p,
+    (rhoGuess) => {
+      if (!Number.isFinite(rhoGuess) || rhoGuess <= 0) {
+        return Number.NaN;
+      }
+      return region3ByRhoT(rhoGuess, T).pressure - p;
+    },
     1 / v0,
   );
 

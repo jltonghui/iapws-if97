@@ -10,6 +10,7 @@ import { region2 } from '../regions/region2.js';
 import { region5 } from '../regions/region5.js';
 import { detectRegionPT } from './region-detector.js';
 import { solveRegion3PTBasic } from './region3-pt.js';
+import { assertFiniteNumber } from './input-validation.js';
 import { normalizeSolveInput } from './solve-input-normalization.js';
 import { viscosity, thermalConductivity, surfaceTension, dielectricConstant, ionizationConstant } from '../transport/properties.js';
 import { solvePH } from '../backward/ph.js';
@@ -60,6 +61,9 @@ function enrichState(basic: BasicProperties): SteamState {
  * @returns Complete steam state with transport properties
  */
 export function solvePT(p: number, T: number): SteamState {
+  assertFiniteNumber('Pressure', p);
+  assertFiniteNumber('Temperature', T);
+
   if (p < C.P_MIN || p > C.P_MAX) {
     throw new OutOfRangeError('Pressure', p, C.P_MIN, C.P_MAX);
   }

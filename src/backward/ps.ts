@@ -11,10 +11,13 @@ import { region1 } from '../regions/region1.js';
 import { region2 } from '../regions/region2.js';
 import { region3ByRhoT } from '../regions/region3.js';
 import { region5 } from '../regions/region5.js';
+import { assertFiniteNumber } from '../core/input-validation.js';
 import { detectRegionPS } from '../core/region-detector.js';
 import { newtonRaphson } from '../solvers/newton-raphson.js';
 import { nelderMead } from '../solvers/nelder-mead.js';
 import { validateBackwardState } from './solution-validation.js';
+import { backwardConstraintTolerance } from './tolerances.js';
+import { sumNormalizedResiduals } from './objective-normalization.js';
 import {
   mixSaturationState,
   qualityFromSaturationProperty,
@@ -173,6 +176,9 @@ const R3B_PS_V_TABLE: CoefficientTable = [
  * @param s - Specific entropy [kJ/(kg·K)]
  */
 export function solvePS(p: number, s: number): BasicProperties {
+  assertFiniteNumber('Pressure', p);
+  assertFiniteNumber('Entropy', s);
+
   if (p < C.P_MIN || p > C.P_MAX) {
     throw new OutOfRangeError('Pressure', p, C.P_MIN, C.P_MAX);
   }
@@ -209,6 +215,8 @@ export function solvePS(p: number, s: number): BasicProperties {
       );
     }
     case Region.Region3: {
+      const pressureTolerance = 1e-5 * Math.max(1, Math.abs(p));
+      const entropyTolerance = backwardConstraintTolerance('entropy', s);
       let T0: number, v0: number;
       if (s <= C.R3_S_CRT) {
         T0 = 760 * evalPoly(R3A_PS_T_TABLE, -0.240, 0.703, p / 100, s / 4.4);
@@ -218,14 +226,20 @@ export function solvePS(p: number, s: number): BasicProperties {
         v0 = 0.0088 * evalPoly(R3B_PS_V_TABLE, -0.298, 0.816, p / 100, s / 5.3);
       }
       const sol = nelderMead(
-        (pair) => Math.abs(region3ByRhoT(1 / pair[0], pair[1]).entropy - s) +
-                  Math.abs(region3ByRhoT(1 / pair[0], pair[1]).pressure - p),
+        (pair) => {
+          const state = region3ByRhoT(1 / pair[0], pair[1]);
+          return sumNormalizedResiduals([
+            { actual: state.entropy, expected: s, tolerance: entropyTolerance },
+            { actual: state.pressure, expected: p, tolerance: pressureTolerance },
+          ]);
+        },
         [v0, T0],
+        { maxIterations: 1000, minErrorDelta: 1e-8, minTolerance: 1e-9 },
       );
       return validateBackwardState(
         region3ByRhoT(1 / sol.x[0], sol.x[1]),
         [
-          { label: 'pressure', expected: p, tolerance: 1e-5 * Math.max(1, Math.abs(p)) },
+          { label: 'pressure', expected: p, tolerance: pressureTolerance },
           { label: 'entropy', expected: s },
         ],
         { solverName: 'solvePS', expectedRegion: Region.Region3 },

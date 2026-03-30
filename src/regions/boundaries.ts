@@ -7,6 +7,8 @@
  *
  * Reference: IAPWS-IF97 Section 4 & Supplementary Release on v(P,T) for Region 3
  */
+import { B23_P_MIN, B23_T_MAX, P_MAX, R2_T_MIN } from '../constants.js';
+import { IF97Error } from '../types.js';
 
 // ─── B23 Boundary (Region 2 ↔ Region 3) ────────────────────────────────────
 
@@ -18,6 +20,9 @@
  * @returns Pressure [MPa] on the B23 boundary
  */
 export function boundary23_T_to_P(T: number): number {
+  if (!Number.isFinite(T) || T < R2_T_MIN || T > B23_T_MAX) {
+    throw new IF97Error(`boundary23_T_to_P requires T in [${R2_T_MIN}, ${B23_T_MAX}] K, got ${T}`);
+  }
   return 348.05185628969 - 1.1671859879975 * T + 0.0010192970039326 * T * T;
 }
 
@@ -29,6 +34,9 @@ export function boundary23_T_to_P(T: number): number {
  * @returns Temperature [K] on the B23 boundary
  */
 export function boundary23_P_to_T(p: number): number {
+  if (!Number.isFinite(p) || p < B23_P_MIN || p > P_MAX) {
+    throw new IF97Error(`boundary23_P_to_T requires p in [${B23_P_MIN}, ${P_MAX}] MPa, got ${p}`);
+  }
   return 572.54459862746 + Math.sqrt((p - 13.91883977887) / 0.0010192970039326);
 }
 

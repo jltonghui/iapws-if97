@@ -2,6 +2,7 @@
  * Newton-Raphson root-finding solver.
  * Finds x such that f(x) = 0, with optional analytical derivative.
  */
+import { ConvergenceError } from '../types.js';
 
 export interface NewtonRaphsonOptions {
   /** Convergence tolerance (default 1e-7) */
@@ -22,6 +23,7 @@ export interface NewtonRaphsonOptions {
  * @param fp - Optional analytical derivative f'(x)
  * @param options - Solver options
  * @returns x such that f(x) ≈ 0
+ * @throws {ConvergenceError} if the iteration diverges or does not converge
  */
 export function newtonRaphson(
   f: (x: number) => number,
@@ -38,6 +40,11 @@ export function newtonRaphson(
   let x = x0;
   for (let iter = 0; iter < maxIter; iter++) {
     const y = f(x);
+    if (!Number.isFinite(y)) {
+      throw new ConvergenceError('newtonRaphson', iter + 1);
+    }
+    if (y === 0) return x;
+
     let yp: number;
 
     if (fp) {
@@ -51,11 +58,17 @@ export function newtonRaphson(
       yp = ((ym2h - yp2h) + 8 * (yph - ymh)) * hr / 12;
     }
 
-    if (Math.abs(yp) <= eps * Math.abs(y)) return x;
+    if (!Number.isFinite(yp) || Math.abs(yp) <= eps * Math.max(1, Math.abs(y))) {
+      throw new ConvergenceError('newtonRaphson', iter + 1);
+    }
 
     const x1 = x - y / yp;
-    if (Math.abs(x1 - x) <= tol * Math.abs(x1)) return x1;
+    if (!Number.isFinite(x1)) {
+      throw new ConvergenceError('newtonRaphson', iter + 1);
+    }
+    if (Math.abs(x1 - x) <= tol * Math.max(1, Math.abs(x1))) return x1;
     x = x1;
   }
-  return x;
+
+  throw new ConvergenceError('newtonRaphson', maxIter);
 }

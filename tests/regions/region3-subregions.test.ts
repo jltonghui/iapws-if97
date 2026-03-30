@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { solvePx } from '../../src/index.js';
+import { evalSubregion } from '../../src/regions/region3-eval.js';
 import { saturationTemperature } from '../../src/regions/region4.js';
 import { REGION3_SUBREGIONS } from '../../src/regions/region3-data.js';
 import { region3ByRhoT } from '../../src/regions/region3.js';
 import { region3SatVolume, region3Volume } from '../../src/regions/region3-subregions.js';
 import { b3ab, b3cd, b3ef, b3gh, b3ij, b3jk, b3mn, b3op, b3qu, b3rx, b3uv, b3wx } from '../../src/regions/boundaries.js';
-import { expectDigitsClose } from '../assertions.js';
+import { IF97Error } from '../../src/types.js';
+import { expectDigitsClose } from '../helpers/assertions.js';
 
 function midpoint(a: number, b: number): number {
   return (a + b) / 2;
@@ -19,6 +21,12 @@ function expectConsistentRegion3Volume(p: number, T: number) {
 }
 
 describe('Region 3 subregion dispatch', () => {
+  it('rejects non-finite or non-positive densities before evaluating the Helmholtz equation', () => {
+    expect(() => region3ByRhoT(0, 650)).toThrow(IF97Error);
+    expect(() => region3ByRhoT(-1, 650)).toThrow(IF97Error);
+    expect(() => region3ByRhoT(Number.NaN, 650)).toThrow(IF97Error);
+  });
+
   it('exposes a complete Region 3 subregion table', () => {
     expect(Object.keys(REGION3_SUBREGIONS)).toEqual([
       'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
@@ -86,6 +94,14 @@ describe('Region 3 subregion dispatch', () => {
     }
   });
 
+  it('keeps the Region 3 PT solve working on a representative high-pressure point', () => {
+    const state = region3ByRhoT(1 / region3Volume(25.5, 650), 650);
+
+    expect(state.pressure).toBeGreaterThan(0);
+    expect(state.specificVolume).toBeGreaterThan(0);
+    expect(state.enthalpy).toBeGreaterThan(0);
+  });
+
   it('covers the Region 3 saturation boundary helpers', () => {
     const liquidBranchOnlyCases = [18.5, 21.5, 21.95];
     const liquidCases = [19.5, 20.0];
@@ -111,5 +127,14 @@ describe('Region 3 subregion dispatch', () => {
       const T = saturationTemperature(p);
       expectDigitsClose(region3SatVolume(p, T, 1), solvePx(p, 1).specificVolume, 5);
     }
+  });
+
+  it('uses the same liquid-side C/S threshold in saturation and PT dispatchers', () => {
+    const p = 19.00881189173929;
+    const T = saturationTemperature(p);
+    const expected = evalSubregion(REGION3_SUBREGIONS.S, p, T);
+
+    expect(region3SatVolume(p, T, 0)).toBe(expected);
+    expect(region3Volume(p, T)).toBe(expected);
   });
 });

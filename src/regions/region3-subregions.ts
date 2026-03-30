@@ -9,12 +9,15 @@ import { saturationPressure, saturationTemperature } from './region4.js';
 import { Pc } from '../constants.js';
 import { IF97Error } from '../types.js';
 
+// Shared liquid-side C/S saturation threshold from the Region 3 supplementary release.
+const R3_C_S_LIQUID_BOUNDARY_PRESSURE = 19.00881189173929;
+
 /** Compute specific volume for Region 3 saturation boundary. x=0 liquid, x=1 vapor
  *  Pressure thresholds from IAPWS Supplementary Release on Backward
  *  Equations v(P,T) for Region 3, Table 1 (saturation subregion limits). */
 export function region3SatVolume(p: number, T: number, x: number): number {
   if (x === 0) {
-    if (p < 19.00881189) return evalSubregion(R3.C, p, T);  // Psat(643.15 K)
+    if (p < R3_C_S_LIQUID_BOUNDARY_PRESSURE) return evalSubregion(R3.C, p, T);
     if (p < 21.0434) return evalSubregion(R3.S, p, T);      // near P3cd
     if (p < 21.9316) return evalSubregion(R3.U, p, T);      // near Puv
     return evalSubregion(R3.Y, p, T);
@@ -113,10 +116,12 @@ export function region3Volume(p: number, T: number): number {
     return evalSubregion(R3.K, p, T);
   }
 
-  if (p > 19.00881189173929 && p <= 20.5) {
+  if (p >= R3_C_S_LIQUID_BOUNDARY_PRESSURE && p <= 20.5) {
     const tcd = b3cd(p), Ts = saturationTemperature(p);
-    if (T <= tcd) return evalSubregion(R3.C, p, T);
-    if (T <= Ts) return evalSubregion(R3.S, p, T);
+    if (T <= Ts) {
+      if (T < tcd && T < Ts) return evalSubregion(R3.C, p, T);
+      return evalSubregion(R3.S, p, T);
+    }
     return evalSubregion(R3.T, p, T);
   }
 

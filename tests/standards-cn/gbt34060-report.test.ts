@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { solvePT } from '../../src/index.js';
-import { printGroupedReport, type ReportRow } from '../standards/reporting.js';
+import { printGroupedReport, type ReportRow } from '../helpers/standards-reporting.js';
 
 describe('GB/T 34060-2017 comparison report', () => {
   it('prints a superheated-steam comparison against GB/T 34060-2017 Table A.3', () => {

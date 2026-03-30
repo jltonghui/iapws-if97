@@ -5,10 +5,11 @@
 import { describe, it, expect } from 'vitest';
 import { region1 } from '../../src/regions/region1';
 import { region2 } from '../../src/regions/region2';
+import { solvePT } from '../../src/core/solver.js';
 import { solvePH } from '../../src/backward/ph';
 import { solvePS } from '../../src/backward/ps';
 import { solvePx } from '../../src/saturation/two-phase';
-import { expectRegion4RoundTrip } from './assertions.js';
+import { expectRegion4RoundTrip } from '../helpers/backward-assertions.js';
 
 const TOL_T = 0.2; // K tolerance for temperature round-trip
 
@@ -51,6 +52,20 @@ describe('P-H Backward Round-Trip', () => {
     expect(result.pressure).toBe(p);
     expect(result.enthalpy).toBe(forward.enthalpy);
   });
+
+  it('throws OutOfRangeError for pressure outside the supported range', async () => {
+    const { OutOfRangeError } = await import('../../src/types.js');
+
+    expect(() => solvePH(0, 1000)).toThrow(OutOfRangeError);
+    expect(() => solvePH(101, 1000)).toThrow(OutOfRangeError);
+  });
+
+  it('throws OutOfRangeError for enthalpy outside the supported range', async () => {
+    const { OutOfRangeError } = await import('../../src/types.js');
+
+    expect(() => solvePH(1, -1)).toThrow(OutOfRangeError);
+    expect(() => solvePH(1, 1e9)).toThrow(OutOfRangeError);
+  });
 });
 
 describe('P-S Backward Round-Trip', () => {
@@ -91,5 +106,33 @@ describe('P-S Backward Round-Trip', () => {
 
     expect(result.pressure).toBe(p);
     expect(result.entropy).toBe(forward.entropy);
+  });
+
+  it('does not collapse near-saturation Region 3 states into Region 4', () => {
+    const forward = solvePT(18, 630.1418133443477 - 1e-4);
+
+    expect(forward.region).toBe(3);
+
+    const fromPH = solvePH(forward.pressure, forward.enthalpy);
+    const fromPS = solvePS(forward.pressure, forward.entropy);
+
+    expect(fromPH.region).toBe(3);
+    expect(fromPS.region).toBe(3);
+    expect(fromPH.quality).toBeNull();
+    expect(fromPS.quality).toBeNull();
+  });
+
+  it('throws OutOfRangeError for pressure outside the supported range', async () => {
+    const { OutOfRangeError } = await import('../../src/types.js');
+
+    expect(() => solvePS(0, 5)).toThrow(OutOfRangeError);
+    expect(() => solvePS(101, 5)).toThrow(OutOfRangeError);
+  });
+
+  it('throws OutOfRangeError for entropy outside the supported range', async () => {
+    const { OutOfRangeError } = await import('../../src/types.js');
+
+    expect(() => solvePS(1, -1)).toThrow(OutOfRangeError);
+    expect(() => solvePS(1, 1e9)).toThrow(OutOfRangeError);
   });
 });

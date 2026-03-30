@@ -1,7 +1,11 @@
 import * as C from '../constants.js';
 import { bracketedNewton } from '../solvers/bracketed-newton.js';
 import type { BasicProperties } from '../types.js';
-import { mixSaturationState, saturationEndpointsAtTemperature } from './common.js';
+import {
+  mixSaturationState,
+  rawQualityFromSaturationProperty,
+  saturationEndpointsAtTemperature,
+} from './common.js';
 import {
   assertRegion4StateAllowed,
   clampRegion4TemperatureBelowCritical,
@@ -11,14 +15,6 @@ const REGION4_QUALITY_TOLERANCE = 1e-6;
 
 function isClose(a: number, b: number): boolean {
   return Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(a), Math.abs(b));
-}
-
-function rawQualityFromSaturationProperty(
-  liquidValue: number,
-  vaporValue: number,
-  mixtureValue: number,
-): number {
-  return (mixtureValue - liquidValue) / (vaporValue - liquidValue);
 }
 
 function isAdmissibleQuality(quality: number): boolean {

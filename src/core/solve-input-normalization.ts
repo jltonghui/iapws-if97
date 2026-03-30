@@ -1,5 +1,6 @@
 import type { SolveInput } from '../types.js';
 import { IF97Error } from '../types.js';
+import { assertFiniteNumber } from './input-validation.js';
 
 export type CanonicalSolveInput =
   | { mode: 'PT'; p: number; T: number }
@@ -34,7 +35,9 @@ function pickNumericAlias(
     );
   }
 
-  return (shortValue ?? longValue) as number;
+  const value = shortValue ?? longValue;
+  assertFiniteNumber(label, value);
+  return value;
 }
 
 // Normalize public solve() aliases to the canonical short-key form used internally.

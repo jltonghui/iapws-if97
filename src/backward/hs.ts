@@ -14,6 +14,7 @@ import { region1 } from '../regions/region1.js';
 import { region2 } from '../regions/region2.js';
 import { region3ByRhoT } from '../regions/region3.js';
 import { region5 } from '../regions/region5.js';
+import { assertFiniteNumber } from '../core/input-validation.js';
 import { detectRegionHS } from '../core/region-detector.js';
 import { newtonRaphson } from '../solvers/newton-raphson.js';
 import { nelderMead } from '../solvers/nelder-mead.js';
@@ -125,8 +126,10 @@ function r2cPhs(h: number, s: number): number {
 
 function r2Phs(h: number, s: number): number {
   const hBound = b2abBoundary(s);
+  // Region 2 h-s subregion selection: 2a below the h(s) boundary,
+  // otherwise split 2b/2c at the published entropy crossover.
   if (h <= hBound) return r2aPhs(h, s);
-  if (s >= 5.85) return r2bPhs(h, s);
+  if (s >= C.R2_S_CRT) return r2bPhs(h, s);
   return r2cPhs(h, s);
 }
 
@@ -186,6 +189,9 @@ function r3Phs(h: number, s: number): number {
  * @param s - Specific entropy [kJ/(kg·K)]
  */
 export function solveHS(h: number, s: number): BasicProperties {
+  assertFiniteNumber('Enthalpy', h);
+  assertFiniteNumber('Entropy', s);
+
   if (h < C.H_MIN || h > C.H_MAX) {
     throw new OutOfRangeError('Enthalpy', h, C.H_MIN, C.H_MAX);
   }

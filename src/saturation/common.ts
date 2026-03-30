@@ -6,7 +6,7 @@
  * and two-phase mixing.
  */
 import type { BasicProperties } from '../types.js';
-import { Region } from '../types.js';
+import { IF97Error, Region } from '../types.js';
 import { Pc, R2_T_MIN, RHOc, Tt } from '../constants.js';
 import { region1 } from '../regions/region1.js';
 import { region2 } from '../regions/region2.js';
@@ -42,16 +42,47 @@ function withRegion4Metadata(state: BasicProperties, quality: number): BasicProp
 function solveR3Density(p: number, T: number, x: 0 | 1): number {
   const v0 = region3SatVolume(p, T, x);
   return newtonRaphson(
-    (rho) => region3ByRhoT(rho, T).pressure - p,
+    (rho) => {
+      if (!Number.isFinite(rho) || rho <= 0) {
+        return Number.NaN;
+      }
+      return region3ByRhoT(rho, T).pressure - p;
+    },
     1 / v0,
   );
 }
 
 /** Clamp vapour quality to [0, 1], snapping near-zero/one values to the boundary. */
 function clampQuality(x: number): number {
+  if (!Number.isFinite(x)) return Number.NaN;
   if (x <= 1e-12) return 0;
   if (x >= 1 - 1e-12) return 1;
   return Math.max(0, Math.min(1, x));
+}
+
+function qualitySpanTolerance(
+  liquidValue: number,
+  vaporValue: number,
+  mixtureValue: number,
+): number {
+  return 1e-12 * Math.max(1, Math.abs(liquidValue), Math.abs(vaporValue), Math.abs(mixtureValue));
+}
+
+export function rawQualityFromSaturationProperty(
+  liquidValue: number,
+  vaporValue: number,
+  mixtureValue: number,
+): number {
+  if (!Number.isFinite(liquidValue) || !Number.isFinite(vaporValue) || !Number.isFinite(mixtureValue)) {
+    return Number.NaN;
+  }
+
+  const span = vaporValue - liquidValue;
+  if (Math.abs(span) <= qualitySpanTolerance(liquidValue, vaporValue, mixtureValue)) {
+    return Number.NaN;
+  }
+
+  return (mixtureValue - liquidValue) / span;
 }
 
 /**
@@ -122,7 +153,11 @@ export function qualityFromSaturationProperty(
   vaporValue: number,
   mixtureValue: number,
 ): number {
-  return clampQuality((mixtureValue - liquidValue) / (vaporValue - liquidValue));
+  const quality = rawQualityFromSaturationProperty(liquidValue, vaporValue, mixtureValue);
+  if (!Number.isFinite(quality)) {
+    throw new IF97Error('Cannot determine vapor quality from degenerate saturation endpoints');
+  }
+  return clampQuality(quality);
 }
 
 /**
@@ -139,6 +174,9 @@ export function mixSaturationState(
   qualityInput: number,
 ): BasicProperties {
   const quality = clampQuality(qualityInput);
+  if (!Number.isFinite(quality)) {
+    throw new IF97Error('Region 4 quality must be finite');
+  }
   const { liquid, vapor, pressure, temperature } = endpoints;
 
   if (quality === 0) {

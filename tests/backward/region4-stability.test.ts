@@ -7,7 +7,7 @@ import { solveTS } from '../../src/backward/ts.js';
 import { solveTx } from '../../src/saturation/two-phase.js';
 import { Tc, Tt } from '../../src/constants.js';
 import { Region } from '../../src/types.js';
-import { expectRegion4RoundTrip } from './assertions.js';
+import { expectRegion4RoundTrip } from '../helpers/backward-assertions.js';
 
 type Region4Sample = {
   name: string;

@@ -7,7 +7,7 @@ import { region1 } from '../../src/regions/region1.js';
 import { region2 } from '../../src/regions/region2.js';
 import { Tc } from '../../src/constants.js';
 import { Region, IF97Error, OutOfRangeError } from '../../src/types.js';
-import { expectBackwardValue, expectRegion4RoundTrip, expectSpecificVolume } from './assertions.js';
+import { expectBackwardValue, expectRegion4RoundTrip, expectSpecificVolume } from '../helpers/backward-assertions.js';
 
 describe('detectRegionTH', () => {
   it('detects Region 1 from a known compressed-liquid state', () => {

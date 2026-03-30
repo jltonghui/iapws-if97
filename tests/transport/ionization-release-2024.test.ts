@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ionizationConstant } from '../../src/transport/properties.js';
-import { expectDigitsClose } from '../assertions.js';
+import { expectDigitsClose } from '../helpers/assertions.js';
 
 describe('ionizationConstant', () => {
   const cases = [

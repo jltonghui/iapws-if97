@@ -15,10 +15,13 @@ import { region2 } from '../regions/region2.js';
 import { region3ByRhoT } from '../regions/region3.js';
 import { region5 } from '../regions/region5.js';
 import { saturationTemperature } from '../regions/region4.js';
+import { assertFiniteNumber } from '../core/input-validation.js';
 import { detectRegionPH } from '../core/region-detector.js';
 import { newtonRaphson } from '../solvers/newton-raphson.js';
 import { nelderMead } from '../solvers/nelder-mead.js';
 import { validateBackwardState } from './solution-validation.js';
+import { backwardConstraintTolerance } from './tolerances.js';
+import { sumNormalizedResiduals } from './objective-normalization.js';
 import {
   mixSaturationState,
   qualityFromSaturationProperty,
@@ -55,6 +58,11 @@ function r1BackwardT(p: number, h: number): number {
 }
 
 // ─── Region 2 Backward T(P,H) ─────────────────────────────────────────────
+
+// Lowest pressure where Region 2c can appear in the P-H backward formulation.
+// For 4 < p <= 6.546699678 MPa the supplementary release selects subregion 2b
+// directly; above this threshold use the B2bc(h) boundary to discriminate 2b/2c.
+const R2_PH_B2BC_P_MIN = 6.546699678;
 
 // B2bc boundary (exported for future use)
 export function b2bc_H_P(h: number): number {
@@ -116,10 +124,10 @@ function r2BackwardT(p: number, h: number): number {
   let T: number;
   if (p <= C.R2_P_CRT) {
     T = r2aBackwardT(p, h);
-  } else if (p <= 6.546699678) {
+  } else if (p <= R2_PH_B2BC_P_MIN) {
     T = r2bBackwardT(p, h);
   } else {
-    if (p < 905.84278514723 - 0.67955786399241 * h + 1.2809002730136e-4 * h * h) {
+    if (p < b2bc_H_P(h)) {
       T = r2bBackwardT(p, h);
     } else {
       T = r2cBackwardT(p, h);
@@ -220,6 +228,9 @@ export function r4EnthalpyToPsat(h: number): number {
  * @param h - Specific enthalpy [kJ/kg]
  */
 export function solvePH(p: number, h: number): BasicProperties {
+  assertFiniteNumber('Pressure', p);
+  assertFiniteNumber('Enthalpy', h);
+
   if (p < C.P_MIN || p > C.P_MAX) {
     throw new OutOfRangeError('Pressure', p, C.P_MIN, C.P_MAX);
   }
@@ -257,6 +268,8 @@ export function solvePH(p: number, h: number): BasicProperties {
     }
     case Region.Region3: {
       const hBound = b3ab_P_to_H(p);
+      const pressureTolerance = 1e-5 * Math.max(1, Math.abs(p));
+      const enthalpyTolerance = backwardConstraintTolerance('enthalpy', h);
       let T0: number, v0: number;
       if (h < hBound) {
         T0 = 760 * evalPoly(R3A_PH_T, -0.240, 0.615, p / 100, h / 2300);
@@ -266,14 +279,20 @@ export function solvePH(p: number, h: number): BasicProperties {
         v0 = 0.0088 * evalPoly(R3B_PH_V, -0.0661, 0.720, p / 100, h / 2800);
       }
       const sol = nelderMead(
-        (pair) => Math.abs(region3ByRhoT(1 / pair[0], pair[1]).enthalpy - h) +
-                  Math.abs(region3ByRhoT(1 / pair[0], pair[1]).pressure - p),
+        (pair) => {
+          const state = region3ByRhoT(1 / pair[0], pair[1]);
+          return sumNormalizedResiduals([
+            { actual: state.enthalpy, expected: h, tolerance: enthalpyTolerance },
+            { actual: state.pressure, expected: p, tolerance: pressureTolerance },
+          ]);
+        },
         [v0, T0],
+        { maxIterations: 1000, minErrorDelta: 1e-8, minTolerance: 1e-9 },
       );
       return validateBackwardState(
         region3ByRhoT(1 / sol.x[0], sol.x[1]),
         [
-          { label: 'pressure', expected: p, tolerance: 1e-5 * Math.max(1, Math.abs(p)) },
+          { label: 'pressure', expected: p, tolerance: pressureTolerance },
           { label: 'enthalpy', expected: h },
         ],
         { solverName: 'solvePH', expectedRegion: Region.Region3 },

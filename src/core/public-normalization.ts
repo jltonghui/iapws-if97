@@ -26,16 +26,42 @@ function snapSimpleDecimal(value: number): number {
   return Object.is(value, -0) ? 0 : value;
 }
 
-export function normalizePublicState<T extends PublicState>(state: T): T {
-  const normalized = { ...state } as unknown as Record<string, number | null>;
+function normalizeNullableNumber(value: number | null): number | null {
+  return value === null ? null : snapSimpleDecimal(value);
+}
 
-  for (const [key, value] of Object.entries(state)) {
-    // Preserve enum/null fields exactly; only normalize exposed numeric outputs.
-    if (key === 'region' || value === null || typeof value !== 'number') {
-      continue;
-    }
-    normalized[key] = snapSimpleDecimal(value);
-  }
+function normalizeBasicProperties(state: BasicProperties): BasicProperties {
+  return {
+    region: state.region,
+    pressure: snapSimpleDecimal(state.pressure),
+    temperature: snapSimpleDecimal(state.temperature),
+    specificVolume: snapSimpleDecimal(state.specificVolume),
+    internalEnergy: snapSimpleDecimal(state.internalEnergy),
+    entropy: snapSimpleDecimal(state.entropy),
+    enthalpy: snapSimpleDecimal(state.enthalpy),
+    cp: normalizeNullableNumber(state.cp),
+    cv: normalizeNullableNumber(state.cv),
+    speedOfSound: normalizeNullableNumber(state.speedOfSound),
+    quality: normalizeNullableNumber(state.quality),
+    isobaricExpansion: normalizeNullableNumber(state.isobaricExpansion),
+    isothermalCompressibility: normalizeNullableNumber(state.isothermalCompressibility),
+  };
+}
 
-  return normalized as unknown as T;
+function normalizeSteamState(state: SteamState): SteamState {
+  return {
+    ...normalizeBasicProperties(state),
+    density: snapSimpleDecimal(state.density),
+    viscosity: normalizeNullableNumber(state.viscosity),
+    thermalConductivity: normalizeNullableNumber(state.thermalConductivity),
+    surfaceTension: normalizeNullableNumber(state.surfaceTension),
+    dielectricConstant: normalizeNullableNumber(state.dielectricConstant),
+    ionizationConstant: normalizeNullableNumber(state.ionizationConstant),
+  };
+}
+
+export function normalizePublicState(state: SteamState): SteamState;
+export function normalizePublicState(state: BasicProperties): BasicProperties;
+export function normalizePublicState(state: PublicState): PublicState {
+  return 'density' in state ? normalizeSteamState(state) : normalizeBasicProperties(state);
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { solvePx } from '../../src/index.js';
 import { saturationTemperature } from '../../src/saturation.js';
-import { printGroupedReport, type ReportRow } from '../standards/reporting.js';
+import { printGroupedReport, type ReportRow } from '../helpers/standards-reporting.js';
 
 describe('ASME steam table comparison report', () => {
   it('prints a saturation-table comparison against ASME Table S-2', () => {

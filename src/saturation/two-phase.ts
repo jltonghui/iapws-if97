@@ -9,6 +9,7 @@
 
 import type { BasicProperties } from '../types.js';
 import { OutOfRangeError } from '../types.js';
+import { assertFiniteNumber } from '../core/input-validation.js';
 import { saturationPressure } from '../regions/region4.js';
 import { mixSaturationState, saturationEndpointsAtPressure } from './common.js';
 import {
@@ -25,6 +26,9 @@ import {
  * @param x - Vapour quality [0, 1]
  */
 export function solvePx(p: number, x: number): BasicProperties {
+  assertFiniteNumber('Pressure', p);
+  assertFiniteNumber('Quality', x);
+
   if (x < 0 || x > 1) {
     throw new OutOfRangeError('Quality', x, 0, 1);
   }
@@ -43,6 +47,9 @@ export function solvePx(p: number, x: number): BasicProperties {
  * @param x - Vapour quality [0, 1]
  */
 export function solveTx(T: number, x: number): BasicProperties {
+  assertFiniteNumber('Temperature', T);
+  assertFiniteNumber('Quality', x);
+
   if (x < 0 || x > 1) {
     throw new OutOfRangeError('Quality', x, 0, 1);
   }

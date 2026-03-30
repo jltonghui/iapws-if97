@@ -15,7 +15,9 @@ import {
   boundary23_P_to_T,
   boundary23_T_to_P,
 } from '../../src/regions/boundaries.js';
-import { expectDigitsClose } from '../assertions.js';
+import { B23_P_MIN, B23_T_MAX, P_MAX, R2_T_MIN } from '../../src/constants.js';
+import { IF97Error } from '../../src/types.js';
+import { expectDigitsClose } from '../helpers/assertions.js';
 
 describe('region boundary utilities', () => {
   it('B23 pressure/temperature transforms are approximately inverse on the boundary', () => {
@@ -23,6 +25,20 @@ describe('region boundary utilities', () => {
     const pressure = boundary23_T_to_P(temperature);
 
     expectDigitsClose(boundary23_P_to_T(pressure), temperature, 9);
+  });
+
+  it('rejects out-of-domain B23 inputs instead of returning NaN or extrapolated values', () => {
+    expect(() => boundary23_P_to_T(13.5)).toThrow(IF97Error);
+    expect(() => boundary23_P_to_T(14)).toThrow(IF97Error);
+    expect(() => boundary23_P_to_T(P_MAX + 1)).toThrow(IF97Error);
+
+    expect(() => boundary23_T_to_P(600)).toThrow(IF97Error);
+    expect(() => boundary23_T_to_P(B23_T_MAX + 1)).toThrow(IF97Error);
+  });
+
+  it('accepts exact B23 endpoint inputs', () => {
+    expectDigitsClose(boundary23_P_to_T(B23_P_MIN), R2_T_MIN, 9);
+    expectDigitsClose(boundary23_T_to_P(R2_T_MIN), B23_P_MIN, 9);
   });
 
   it('evaluates Region 3 subregion boundaries to finite temperatures', () => {

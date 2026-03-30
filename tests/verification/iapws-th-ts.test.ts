@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Region, solve, solvePT, solveTH, solveTS } from '../../src/index.js';
-import { expectRelativeClose } from '../assertions.js';
-import { expectBackwardValue } from '../backward/assertions.js';
+import { expectRelativeClose } from '../helpers/assertions.js';
+import { expectBackwardValue } from '../helpers/backward-assertions.js';
 
 describe('IAPWS TH/TS backward verification', () => {
   describe('Region 1 — Table 5 backward check', () => {

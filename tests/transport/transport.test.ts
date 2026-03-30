@@ -2,10 +2,20 @@
 import { describe, it, expect } from 'vitest';
 import { viscosity, thermalConductivity, surfaceTension, dielectricConstant, ionizationConstant } from '../../src/transport/properties.js';
 import { Tc, RHOc } from '../../src/constants.js';
-import { expectDigitsClose } from '../assertions.js';
+import { IF97Error } from '../../src/types.js';
+import { expectDigitsClose } from '../helpers/assertions.js';
 
 describe('Transport Properties', () => {
   describe('viscosity', () => {
+    it.each([
+      { T: 298.15, rho: 998, mu: 889.735100e-6 },
+      { T: 373.15, rho: 1000, mu: 307.883622e-6 },
+      { T: 433.15, rho: 1, mu: 14.538324e-6 },
+      { T: 873.15, rho: 100, mu: 35.802262e-6 },
+    ])('matches IAPWS 2008 Table 4 at T=$T K, rho=$rho kg/m^3', ({ T, rho, mu }) => {
+      expectDigitsClose(viscosity(T, rho), mu, 6);
+    });
+
     it('returns positive finite value for liquid water at 300K', () => {
       const mu = viscosity(300, 997);
       expect(mu).toBeGreaterThan(0);
@@ -18,9 +28,24 @@ describe('Transport Properties', () => {
       const muSteam = viscosity(373.15, 0.6);
       expect(muSteam).toBeLessThan(muLiquid);
     });
+
+    it('rejects non-finite and non-positive inputs', () => {
+      expect(() => viscosity(Number.NaN, 997)).toThrow(IF97Error);
+      expect(() => viscosity(300, Number.POSITIVE_INFINITY)).toThrow(IF97Error);
+      expect(() => viscosity(300, -1)).toThrow(IF97Error);
+    });
   });
 
   describe('thermalConductivity', () => {
+    it.each([
+      { T: 298.15, rho: 0, k: 18.4341883e-3 },
+      { T: 298.15, rho: 998, k: 607.712868e-3 },
+      { T: 298.15, rho: 1200, k: 799.038144e-3 },
+      { T: 873.15, rho: 0, k: 79.1034659e-3 },
+    ])('matches IAPWS 2011 Table 4 at T=$T K, rho=$rho kg/m^3', ({ T, rho, k }) => {
+      expectDigitsClose(thermalConductivity(T, rho), k, 6);
+    });
+
     it('returns positive finite value for liquid water at 300K', () => {
       const k = thermalConductivity(300, 997);
       expect(k).toBeGreaterThan(0.5); // ~0.6 W/(m·K)
@@ -73,9 +98,27 @@ describe('Transport Properties', () => {
       // Allow up to 1% difference
       expect(Math.abs(kWith - kWithout) / kWithout).toBeLessThan(0.01);
     });
+
+    it('rejects invalid primary and optional inputs', () => {
+      expect(() => thermalConductivity(Number.NaN, 997)).toThrow(IF97Error);
+      expect(() => thermalConductivity(300, -1)).toThrow(IF97Error);
+      expect(() => thermalConductivity(300, 997, Number.POSITIVE_INFINITY, 1, 1, 1e-3)).toThrow(IF97Error);
+      expect(() => thermalConductivity(300, 997, 4.2, 0, 1, 1e-3)).toThrow(IF97Error);
+      expect(() => thermalConductivity(300, 997, 4.2, 4.0, 1, 0)).toThrow(IF97Error);
+    });
   });
 
   describe('surfaceTension', () => {
+    it.each([
+      { T: 273.15, sigma: 0.0756476682299 },
+      { T: 293.15, sigma: 0.0727361404216 },
+      { T: 373.15, sigma: 0.0589118685877 },
+      { T: 573.15, sigma: 0.0143596149187 },
+      { T: 643.15, sigma: 0.000388223675840 },
+    ])('matches the IAPWS 2014 release equation at T=$T K', ({ T, sigma }) => {
+      expectDigitsClose(surfaceTension(T)!, sigma, 9);
+    });
+
     it('returns ~0.0728 N/m at 293.15K (20°C)', () => {
       const sigma = surfaceTension(293.15);
       expect(sigma).not.toBeNull();
@@ -103,9 +146,21 @@ describe('Transport Properties', () => {
       expect(surfaceTension(250)).toBeNull();
       expect(surfaceTension(Tc + 10)).toBeNull();
     });
+
+    it('rejects non-finite temperatures', () => {
+      expect(() => surfaceTension(Number.NaN)).toThrow(IF97Error);
+      expect(() => surfaceTension(Number.POSITIVE_INFINITY)).toThrow(IF97Error);
+    });
   });
 
   describe('dielectricConstant', () => {
+    it.each([
+      { T: 298.15, rho: 997.047435, eps: 78.590725 },
+      { T: 375, rho: 957.003592, eps: 55.565842 },
+    ])('tracks official liquid-water reference values at T=$T K, rho=$rho kg/m^3', ({ T, rho, eps }) => {
+      expect(Math.abs((dielectricConstant(T, rho) - eps) / eps)).toBeLessThan(0.01);
+    });
+
     it('returns ~80 for liquid water at 298.15K', () => {
       const eps = dielectricConstant(298.15, 997);
       expect(eps).toBeGreaterThan(75);
@@ -116,6 +171,12 @@ describe('Transport Properties', () => {
       const eps = dielectricConstant(500, 0.5);
       expect(eps).toBeGreaterThan(0.9);
       expect(eps).toBeLessThan(2);
+    });
+
+    it('rejects non-finite and non-positive inputs', () => {
+      expect(() => dielectricConstant(Number.NaN, 997)).toThrow(IF97Error);
+      expect(() => dielectricConstant(300, Number.NEGATIVE_INFINITY)).toThrow(IF97Error);
+      expect(() => dielectricConstant(300, -1)).toThrow(IF97Error);
     });
   });
 
@@ -128,6 +189,12 @@ describe('Transport Properties', () => {
 
     it('returns null outside the released validity range', () => {
       expect(ionizationConstant(1500, 10)).toBeNull();
+    });
+
+    it('rejects non-finite and non-positive inputs', () => {
+      expect(() => ionizationConstant(Number.NaN, 997)).toThrow(IF97Error);
+      expect(() => ionizationConstant(300, Number.NaN)).toThrow(IF97Error);
+      expect(() => ionizationConstant(300, -1)).toThrow(IF97Error);
     });
   });
 });

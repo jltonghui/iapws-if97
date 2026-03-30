@@ -2,6 +2,7 @@
  * Nelder-Mead (downhill simplex) minimizer.
  * Minimizes f(x) where x is an array of numbers.
  */
+import { ConvergenceError } from '../types.js';
 
 export interface NelderMeadOptions {
   maxIterations?: number;
@@ -32,19 +33,28 @@ export function nelderMead(f: (x: number[]) => number, x0: number[], opts?: Neld
   const sigma = opts?.sigma ?? 0.5;
 
   const N = x0.length;
+  let converged = false;
+
+  function evaluate(point: number[], iteration: number): number {
+    const value = f(point);
+    if (!Number.isFinite(value)) {
+      throw new ConvergenceError('nelderMead', iteration);
+    }
+    return value;
+  }
 
   type Vertex = number[] & { fx: number };
   const simplex: Vertex[] = new Array(N + 1);
 
   // Initialize simplex
   const v0 = [...x0] as Vertex;
-  v0.fx = f(x0);
+  v0.fx = evaluate(x0, 1);
   simplex[0] = v0;
 
   for (let i = 0; i < N; i++) {
     const pt = [...x0] as Vertex;
     pt[i] = pt[i] ? pt[i] * nonZeroDelta : zeroDelta;
-    pt.fx = f(pt);
+    pt.fx = evaluate(pt, 1);
     simplex[i + 1] = pt;
   }
 
@@ -71,10 +81,15 @@ export function nelderMead(f: (x: number[]) => number, x0: number[], opts?: Neld
     simplex.sort(sortOrder);
 
     let maxDiff = 0;
-    for (let i = 0; i < N; i++) {
-      maxDiff = Math.max(maxDiff, Math.abs(simplex[0][i] - simplex[1][i]));
+    for (let i = 1; i < simplex.length; i++) {
+      for (let j = 0; j < N; j++) {
+        maxDiff = Math.max(maxDiff, Math.abs(simplex[0][j] - simplex[i][j]));
+      }
     }
-    if (Math.abs(simplex[0].fx - simplex[N].fx) < minErrDelta && maxDiff < minTol) break;
+    if (Math.abs(simplex[0].fx - simplex[N].fx) < minErrDelta && maxDiff < minTol) {
+      converged = true;
+      break;
+    }
 
     for (let i = 0; i < N; i++) {
       centroid[i] = 0;
@@ -84,35 +99,41 @@ export function nelderMead(f: (x: number[]) => number, x0: number[], opts?: Neld
 
     const worst = simplex[N];
     weightedSum(reflected, 1 + rho, centroid, -rho, worst);
-    reflected.fx = f(reflected);
+    reflected.fx = evaluate(reflected, iter + 1);
 
     if (reflected.fx < simplex[0].fx) {
       weightedSum(expanded, 1 + chi, centroid, -chi, worst);
-      expanded.fx = f(expanded);
+      expanded.fx = evaluate(expanded, iter + 1);
       updateSimplex(expanded.fx < reflected.fx ? expanded : reflected);
     } else if (reflected.fx >= simplex[N - 1].fx) {
       let shouldReduce = false;
       if (reflected.fx > worst.fx) {
         weightedSum(contracted, 1 + psi, centroid, -psi, worst);
-        contracted.fx = f(contracted);
+        contracted.fx = evaluate(contracted, iter + 1);
         if (contracted.fx < worst.fx) updateSimplex(contracted);
         else shouldReduce = true;
       } else {
         weightedSum(contracted, 1 - psi * rho, centroid, psi * rho, worst);
-        contracted.fx = f(contracted);
+        contracted.fx = evaluate(contracted, iter + 1);
         if (contracted.fx < reflected.fx) updateSimplex(contracted);
         else shouldReduce = true;
       }
       if (shouldReduce) {
-        if (sigma >= 1) break;
+        if (sigma >= 1) {
+          throw new ConvergenceError('nelderMead', iter + 1);
+        }
         for (let i = 1; i < simplex.length; i++) {
           weightedSum(simplex[i], 1 - sigma, simplex[0], sigma, simplex[i]);
-          simplex[i].fx = f(simplex[i]);
+          simplex[i].fx = evaluate(simplex[i], iter + 1);
         }
       }
     } else {
       updateSimplex(reflected);
     }
+  }
+
+  if (!converged) {
+    throw new ConvergenceError('nelderMead', maxIter);
   }
 
   simplex.sort(sortOrder);

@@ -8,6 +8,7 @@
 import type { BasicProperties } from '../types.js';
 import * as C from '../constants.js';
 import { IF97Error, OutOfRangeError, Region } from '../types.js';
+import { assertFiniteNumber } from '../core/input-validation.js';
 import { detectRegionTS } from '../core/region-detector.js';
 import { solveRegion3PTBasic } from '../core/region3-pt.js';
 import { region1 } from '../regions/region1.js';
@@ -42,6 +43,9 @@ const extractS = (s: BasicProperties) => s.entropy;
  * @throws {IF97Error} if T is within the critical exclusion band
  */
 export function solveTS(T: number, s: number): BasicProperties {
+  assertFiniteNumber('Temperature', T);
+  assertFiniteNumber('Entropy', s);
+
   if (T < C.T_MIN || T > C.T_MAX) {
     throw new OutOfRangeError('Temperature', T, C.T_MIN, C.T_MAX);
   }

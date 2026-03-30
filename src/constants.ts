@@ -8,9 +8,14 @@
 // ─── Fundamental Constants ──────────────────────────────────────────────────
 
 /** Specific gas constant for water [kJ/(kg·K)].
- *  IAPWS-IF97, §2 (Table 1). Fixed value for IF97 internal consistency;
- *  differs from the IAPWS-95 / CODATA value. */
+ *  IAPWS-IF97, §2 (Table 1). Fixed value for IF97 internal consistency.
+ *  Do not replace transport correlations with this value; thermal conductivity
+ *  critical enhancement intentionally uses `R_IAPWS_2011_THERMAL`. */
 export const R = 0.461526;
+
+/** Specific gas constant used by the IAPWS 2011 thermal conductivity λ₂ correlation [kJ/(kg·K)].
+ *  Intentionally differs from IF97's `R`; keep both constants distinct and named. */
+export const R_IAPWS_2011_THERMAL = 0.46151805;
 
 // ─── Critical Point ─────────────────────────────────────────────────────────
 

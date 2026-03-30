@@ -11,7 +11,7 @@ export function backwardConstraintTolerance(
     case 'temperature':
       return 1e-9 * Math.max(1, Math.abs(expected));
     case 'enthalpy':
-      return 1e-4 * Math.max(1, Math.abs(expected));
+      return 1e-6 * Math.max(1, Math.abs(expected));
     case 'entropy':
       return 1e-6 * Math.max(1, Math.abs(expected));
     default:

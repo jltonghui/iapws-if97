@@ -8,7 +8,21 @@
  * - Ionization Constant (IAPWS 2024)
  */
 
-import { Tc, Pc, RHOc } from '../constants.js';
+import { assertFiniteNumber } from '../core/input-validation.js';
+import { Tc, Pc, RHOc, R_IAPWS_2011_THERMAL } from '../constants.js';
+import { IF97Error } from '../types.js';
+
+function assertPositiveNumber(parameter: string, value: number): void {
+  if (value <= 0) {
+    throw new IF97Error(`${parameter} must be greater than 0`);
+  }
+}
+
+function assertNonNegativeNumber(parameter: string, value: number): void {
+  if (value < 0) {
+    throw new IF97Error(`${parameter} must be greater than or equal to 0`);
+  }
+}
 
 // ─── Viscosity (IAPWS 2008) ─────────────────────────────────────────────────
 
@@ -29,6 +43,11 @@ const MU1_H = [
  * @param rho Density [kg/m³]
  */
 export function viscosity(T: number, rho: number): number {
+  assertFiniteNumber('Temperature', T);
+  assertFiniteNumber('Density', rho);
+  assertPositiveNumber('Temperature', T);
+  assertNonNegativeNumber('Density', rho);
+
   const That = T / Tc;
   const rhat = rho / RHOc;
 
@@ -78,14 +97,12 @@ const DRHO_REF_COEFFS: [number, number[]][] = [
   [Infinity, [1.11999926419994, 0.595748562571649, 9.88952565078920, -10.3255051147040, 4.66861294457414, -0.503243546373828]],
 ];
 
-/** Specific gas constant for water [kJ/(kg·K)] */
-const R_WATER = 0.46151805;
-
 /**
  * Thermal conductivity of water/steam [W/(m·K)]
  *
  * When optional thermodynamic state parameters are provided, the full IAPWS 2011
  * critical enhancement (λ₂) is computed. Otherwise λ₂ = 0 (backward compatible).
+ * λ₂ intentionally uses `R_IAPWS_2011_THERMAL`, not the IF97 thermodynamic `R`.
  *
  * @param T   Temperature [K]
  * @param rho Density [kg/m³]
@@ -98,6 +115,21 @@ export function thermalConductivity(
   T: number, rho: number,
   cp?: number, cv?: number, drhodP_T?: number, mu?: number,
 ): number {
+  assertFiniteNumber('Temperature', T);
+  assertFiniteNumber('Density', rho);
+  assertPositiveNumber('Temperature', T);
+  assertNonNegativeNumber('Density', rho);
+  if (cp !== undefined) assertFiniteNumber('Isobaric heat capacity', cp);
+  if (cv !== undefined) {
+    assertFiniteNumber('Isochoric heat capacity', cv);
+    assertPositiveNumber('Isochoric heat capacity', cv);
+  }
+  if (drhodP_T !== undefined) assertFiniteNumber('Isothermal density derivative', drhodP_T);
+  if (mu !== undefined) {
+    assertFiniteNumber('Dynamic viscosity', mu);
+    assertPositiveNumber('Dynamic viscosity', mu);
+  }
+
   const That = T / Tc;
   const rhat = rho / RHOc;
 
@@ -166,7 +198,7 @@ function computeK2(
   const mu_uPas = mu * 1e6;
 
   // λ₂ in mW/(m·K)
-  return 177.8514 * rhat * (cp / R_WATER) * That / mu_uPas * Z;
+  return 177.8514 * rhat * (cp / R_IAPWS_2011_THERMAL) * That / mu_uPas * Z;
 }
 
 // ─── Surface Tension (IAPWS 2014) ───────────────────────────────────────────
@@ -177,6 +209,8 @@ function computeK2(
  * @param T Temperature [K], valid for 273.15 ≤ T ≤ 647.096
  */
 export function surfaceTension(T: number): number | null {
+  assertFiniteNumber('Temperature', T);
+
   if (T < 273.15 || T > Tc) {
     return null;
   }
@@ -198,6 +232,11 @@ const DC_Jh = [0.25, 1, 2.5, 1.5, 1.5, 2.5, 2, 2, 5, 0.5, 10];
  * @param rho Density [kg/m³]
  */
 export function dielectricConstant(T: number, rho: number): number {
+  assertFiniteNumber('Temperature', T);
+  assertFiniteNumber('Density', rho);
+  assertPositiveNumber('Temperature', T);
+  assertNonNegativeNumber('Density', rho);
+
   const MW = 0.018015268;
   const rhoM = rho / MW;
   const rhoRc = rhoM / (RHOc / MW);
@@ -229,6 +268,11 @@ function log10(x: number): number { return Math.log(x) / Math.LN10; }
  * @param rho Density [kg/m³]
  */
 export function ionizationConstant(T: number, rho: number): number | null {
+  assertFiniteNumber('Temperature', T);
+  assertFiniteNumber('Density', rho);
+  assertPositiveNumber('Temperature', T);
+  assertNonNegativeNumber('Density', rho);
+
   if (T < 273.15 || T > 1273.15) {
     return null;
   }

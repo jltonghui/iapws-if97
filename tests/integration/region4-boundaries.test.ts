@@ -266,5 +266,19 @@ describe('region4 boundary behavior', () => {
         expect(detectRegionHS(state.enthalpy, state.entropy)).toBe(Region.Region4);
       }
     });
+
+    it('classifies subcritical high-pressure single-phase Region 3 states as Region 3 for PH/PS detection', () => {
+      for (const { p, T } of [
+        { p: 20, T: 630 },
+        { p: 20, T: 640 },
+        { p: 21, T: 640 },
+      ]) {
+        const state = solvePT(p, T);
+
+        expect(state.region).toBe(Region.Region3);
+        expect(detectRegionPH(state.pressure, state.enthalpy)).toBe(Region.Region3);
+        expect(detectRegionPS(state.pressure, state.entropy)).toBe(Region.Region3);
+      }
+    });
   });
 });

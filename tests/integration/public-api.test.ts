@@ -74,6 +74,11 @@ describe('public API surface', () => {
 });
 
 describe('public API normalization', () => {
+  it('documents the public Region 3 primitive contract by rejecting non-positive density inputs', () => {
+    expect(() => regions.region3ByRhoT(0, 650)).toThrow(root.IF97Error);
+    expect(() => regions.region3ByRhoT(-1, 650)).toThrow(root.IF97Error);
+  });
+
   it('snaps floating-point noise at integer round-trip boundaries for solve()', () => {
     const forward = root.solvePT(3, 300);
     const backward = root.solve({ mode: 'PH', p: 3, h: forward.enthalpy });
@@ -92,5 +97,41 @@ describe('public API normalization', () => {
     const state = root.solvePT(3, 300);
 
     expect(state.enthalpy).toBe(region1(3, 300).enthalpy);
+  });
+
+  it('keeps direct saturation solvers aligned with unified solve() transport fields', () => {
+    const direct = root.solvePx(1, 0.5);
+    const unified = root.solve({ mode: 'Px', p: 1, x: 0.5 });
+
+    expect(direct.viscosity).toBeNull();
+    expect(direct.thermalConductivity).toBeNull();
+    expect(direct.surfaceTension).toBe(unified.surfaceTension);
+    expect(direct.dielectricConstant).toBeNull();
+    expect(direct.ionizationConstant).toBeNull();
+  });
+
+  it('keeps direct backward solvers aligned with unified solve() return shape', () => {
+    const forward = root.solvePT(3, 300);
+    const direct = root.solvePH(3, forward.enthalpy);
+    const unified = root.solve({ mode: 'PH', p: 3, h: forward.enthalpy });
+
+    expect(direct.viscosity).toBe(unified.viscosity);
+    expect(direct.thermalConductivity).toBe(unified.thermalConductivity);
+    expect(direct.surfaceTension).toBe(unified.surfaceTension);
+    expect(direct.dielectricConstant).toBe(unified.dielectricConstant);
+    expect(direct.ionizationConstant).toBe(unified.ionizationConstant);
+  });
+
+  it('rejects non-finite inputs across direct public solver exports', () => {
+    const forward = root.solvePT(3, 300);
+
+    expect(() => root.solvePT(Number.NaN, 300)).toThrow(root.IF97Error);
+    expect(() => root.solvePH(3, Number.POSITIVE_INFINITY)).toThrow(root.IF97Error);
+    expect(() => root.solvePS(Number.NaN, forward.entropy)).toThrow(root.IF97Error);
+    expect(() => root.solveHS(forward.enthalpy, Number.NaN)).toThrow(root.IF97Error);
+    expect(() => root.solveTH(Number.NaN, forward.enthalpy)).toThrow(root.IF97Error);
+    expect(() => root.solveTS(forward.temperature, Number.NEGATIVE_INFINITY)).toThrow(root.IF97Error);
+    expect(() => root.solvePx(1, Number.NaN)).toThrow(root.IF97Error);
+    expect(() => root.solveTx(400, Number.NaN)).toThrow(root.IF97Error);
   });
 });

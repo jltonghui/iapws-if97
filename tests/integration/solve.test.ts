@@ -9,8 +9,8 @@ import { region2 } from '../../src/regions/region2.js';
 import { solveTx } from '../../src/saturation/two-phase.js';
 import { Tc, Pc, Pt, Tt, P_MIN } from '../../src/constants.js';
 import { Region, IF97Error, OutOfRangeError } from '../../src/types.js';
-import { expectBackwardValue, expectRegion4RoundTrip } from '../backward/assertions.js';
-import { expectDigitsClose } from '../assertions.js';
+import { expectBackwardValue, expectRegion4RoundTrip } from '../helpers/backward-assertions.js';
+import { expectDigitsClose } from '../helpers/assertions.js';
 
 function relErr(a: number, b: number): number {
   return b === 0 ? Math.abs(a) : Math.abs((a - b) / b);
@@ -75,6 +75,11 @@ describe('solvePT — Integration', () => {
 
   it('throws OutOfRangeError for PT pairs outside the IF97 envelope', () => {
     expect(() => solvePT(80, 1500)).toThrow(OutOfRangeError);
+  });
+
+  it('rejects non-finite PT inputs at the solver boundary', () => {
+    expect(() => solvePT(Number.NaN, 300)).toThrow(IF97Error);
+    expect(() => solvePT(3, Number.POSITIVE_INFINITY)).toThrow(IF97Error);
   });
 });
 
@@ -290,6 +295,15 @@ describe('solve() unified dispatcher', () => {
 
   it('throws IF97Error for conflicting aliases', () => {
     expect(() => solve({ mode: 'PT', p: 3, pressure: 4, T: 300 } as never)).toThrow(IF97Error);
+  });
+
+  it('rejects non-finite values in unified solve() input', () => {
+    expect(() => solve({ mode: 'PT', p: Number.NaN, T: 300 })).toThrow(IF97Error);
+    expect(() => solve({ mode: 'Px', p: 1, x: Number.NaN })).toThrow(IF97Error);
+  });
+
+  it('rejects runtime non-number values in unified solve() input', () => {
+    expect(() => solve({ mode: 'PT', p: '3', T: 300 } as never)).toThrow(IF97Error);
   });
 
   it('returns null ionizationConstant beyond its validity range', () => {

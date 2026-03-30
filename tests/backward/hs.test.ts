@@ -7,7 +7,7 @@ import { detectRegionHS } from '../../src/core/region-detector.js';
 import { IF97Error, Region, OutOfRangeError } from '../../src/types.js';
 import { solveHS } from '../../src/backward/hs.js';
 import { solvePx } from '../../src/saturation/two-phase.js';
-import { expectRegion4RoundTrip } from './assertions.js';
+import { expectBackwardValue, expectRegion4RoundTrip } from '../helpers/backward-assertions.js';
 
 describe('detectRegionHS', () => {
   it('detects Region 1 from known R1 state', () => {
@@ -67,39 +67,43 @@ describe('solveHS backward equations', () => {
   it('R1: round-trip at T=300K, P=3MPa', () => {
     const fwd = region1(3, 300);
     const back = solveHS(fwd.enthalpy, fwd.entropy);
-    expect(Math.abs(back.temperature - 300)).toBeLessThan(1);
-    expect(Math.abs(back.pressure - 3)).toBeLessThan(0.5);
+    expectBackwardValue(back.temperature, 300, 'temperature');
+    expectBackwardValue(back.pressure, 3, 'pressure');
   });
 
   it('R1: round-trip at T=500K, P=3MPa', () => {
     const fwd = region1(3, 500);
     const back = solveHS(fwd.enthalpy, fwd.entropy);
-    expect(Math.abs(back.temperature - 500)).toBeLessThan(1);
-    expect(Math.abs(back.pressure - 3)).toBeLessThan(0.5);
+    expectBackwardValue(back.temperature, 500, 'temperature');
+    expectBackwardValue(back.pressure, 3, 'pressure');
   });
 
   it('R2: round-trip at T=300K, P=0.0035MPa', () => {
     const fwd = region2(0.0035, 300);
     const back = solveHS(fwd.enthalpy, fwd.entropy);
-    expect(Math.abs(back.temperature - 300)).toBeLessThan(2);
+    expectBackwardValue(back.temperature, 300, 'temperature');
+    expectBackwardValue(back.pressure, 0.0035, 'pressure');
   });
 
   it('R2: round-trip at T=700K, P=30MPa', () => {
     const fwd = region2(30, 700);
     const back = solveHS(fwd.enthalpy, fwd.entropy);
-    expect(Math.abs(back.temperature - 700)).toBeLessThan(2);
+    expectBackwardValue(back.temperature, 700, 'temperature');
+    expectBackwardValue(back.pressure, 30, 'pressure');
   });
 
   it('R2: round-trip at T=700K, P=0.0035MPa', () => {
     const fwd = region2(0.0035, 700);
     const back = solveHS(fwd.enthalpy, fwd.entropy);
-    expect(Math.abs(back.temperature - 700)).toBeLessThan(2);
+    expectBackwardValue(back.temperature, 700, 'temperature');
+    expectBackwardValue(back.pressure, 0.0035, 'pressure');
   });
 
   it('R5: round-trip at T=1500K, P=0.5MPa', () => {
     const fwd = region5(0.5, 1500);
     const back = solveHS(fwd.enthalpy, fwd.entropy);
-    expect(Math.abs(back.temperature - 1500)).toBeLessThan(5);
+    expectBackwardValue(back.temperature, 1500, 'temperature');
+    expectBackwardValue(back.pressure, 0.5, 'pressure');
   });
 
   it('preserves the exact enthalpy and entropy inputs', () => {

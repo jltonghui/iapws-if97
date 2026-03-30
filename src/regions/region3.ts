@@ -9,7 +9,7 @@
 
 import { R } from '../constants.js';
 import type { BasicProperties, CoefficientTable } from '../types.js';
-import { Region } from '../types.js';
+import { IF97Error, Region } from '../types.js';
 
 // ─── Coefficient Table (Table 30, IAPWS-IF97) ──────────────────────────────
 
@@ -66,11 +66,19 @@ const T_STAR = 647.096; // T* [K] (critical temperature)
 /**
  * Compute Region 3 thermodynamic properties from density and temperature.
  *
- * @param rho - Density [kg/m³]
+ * Low-level Region 3 equation entry point. Callers must provide a finite,
+ * strictly positive density because the Helmholtz formulation contains ln(ρ).
+ *
+ * @param rho - Density [kg/m³], must be > 0
  * @param T   - Temperature [K]
  * @returns Basic thermodynamic properties
+ * @throws {IF97Error} if rho is non-finite or not strictly positive
  */
 export function region3ByRhoT(rho: number, T: number): BasicProperties {
+  if (!Number.isFinite(rho) || rho <= 0) {
+    throw new IF97Error(`region3ByRhoT requires a finite positive density, got ${rho}`);
+  }
+
   const delta = rho / RHO_STAR;
   const tau = T_STAR / T;
   const v = 1 / rho;

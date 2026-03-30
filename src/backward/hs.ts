@@ -20,6 +20,8 @@ import { newtonRaphson } from '../solvers/newton-raphson.js';
 import { nelderMead } from '../solvers/nelder-mead.js';
 import { solvePH } from './ph.js';
 import { validateBackwardState } from './solution-validation.js';
+import { sumNormalizedResiduals } from './objective-normalization.js';
+import { backwardConstraintTolerance } from './tolerances.js';
 import {
   tryRegion4HSState,
 } from '../saturation/region4-hs.js';
@@ -181,6 +183,26 @@ function r3Phs(h: number, s: number): number {
   return r3bPhs(h, s);
 }
 
+const REGION5_HS_OUT_OF_DOMAIN_PENALTY = 1e18;
+
+function normalizedRegion5HsObjective(h: number, s: number): (pair: number[]) => number {
+  const enthalpyTolerance = backwardConstraintTolerance('enthalpy', h);
+  const entropyTolerance = backwardConstraintTolerance('entropy', s);
+
+  return (pair: number[]): number => {
+    const [p, T] = pair;
+    if (p <= 0 || p > C.R5_P_MAX || T <= C.R5_T_MIN || T > C.R5_T_MAX) {
+      return REGION5_HS_OUT_OF_DOMAIN_PENALTY;
+    }
+
+    const state = region5(p, T);
+    return sumNormalizedResiduals([
+      { actual: state.enthalpy, expected: h, tolerance: enthalpyTolerance },
+      { actual: state.entropy, expected: s, tolerance: entropyTolerance },
+    ]);
+  };
+}
+
 // ─── Main HS Solver ─────────────────────────────────────────────────────────
 
 /**
@@ -271,10 +293,11 @@ export function solveHS(h: number, s: number): BasicProperties {
       throw new IF97Error('solveHS identified Region 4 but failed to construct a valid saturation state');
     }
     case Region.Region5: {
+      const objective = normalizedRegion5HsObjective(h, s);
       const sol = nelderMead(
-        (pair) => Math.abs(region5(pair[0], pair[1]).enthalpy - h) +
-                  Math.abs(region5(pair[0], pair[1]).entropy - s),
+        objective,
         [1, 1400],
+        { maxIterations: 1000, minErrorDelta: 1e-8, minTolerance: 1e-9 },
       );
       return validateBackwardState(
         region5(sol.x[0], sol.x[1]),

@@ -106,6 +106,13 @@ describe('solveHS backward equations', () => {
     expectBackwardValue(back.pressure, 0.5, 'pressure');
   });
 
+  it('R5: round-trip at T=2161.15K, P=25MPa', () => {
+    const fwd = region5(25, 2161.15);
+    const back = solveHS(fwd.enthalpy, fwd.entropy);
+    expectBackwardValue(back.temperature, 2161.15, 'temperature');
+    expectBackwardValue(back.pressure, 25, 'pressure');
+  });
+
   it('preserves the exact enthalpy and entropy inputs', () => {
     const forward = region2(30, 700);
     const backward = solveHS(forward.enthalpy, forward.entropy);

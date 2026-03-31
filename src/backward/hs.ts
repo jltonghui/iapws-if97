@@ -185,6 +185,23 @@ function r3Phs(h: number, s: number): number {
 
 const REGION5_HS_OUT_OF_DOMAIN_PENALTY = 1e18;
 
+function normalizedHsObjective(
+  h: number,
+  s: number,
+  stateAt: (pair: number[]) => BasicProperties,
+): (pair: number[]) => number {
+  const enthalpyTolerance = backwardConstraintTolerance('enthalpy', h);
+  const entropyTolerance = backwardConstraintTolerance('entropy', s);
+
+  return (pair: number[]): number => {
+    const state = stateAt(pair);
+    return sumNormalizedResiduals([
+      { actual: state.enthalpy, expected: h, tolerance: enthalpyTolerance },
+      { actual: state.entropy, expected: s, tolerance: entropyTolerance },
+    ]);
+  };
+}
+
 function normalizedRegion5HsObjective(h: number, s: number): (pair: number[]) => number {
   const enthalpyTolerance = backwardConstraintTolerance('enthalpy', h);
   const entropyTolerance = backwardConstraintTolerance('entropy', s);
@@ -239,10 +256,11 @@ export function solveHS(h: number, s: number): BasicProperties {
   switch (region) {
     case Region.Region1: {
       const P0 = r1Phs(h, s);
+      const objective = normalizedHsObjective(h, s, (pair) => region1(pair[0], pair[1]));
       const sol = nelderMead(
-        (pair) => Math.abs(region1(pair[0], pair[1]).enthalpy - h) +
-                  Math.abs(region1(pair[0], pair[1]).entropy - s),
+        objective,
         [P0, 400],
+        { maxIterations: 1000, minErrorDelta: 1e-8, minTolerance: 1e-9 },
       );
       return validateBackwardState(
         region1(sol.x[0], sol.x[1]),
@@ -256,10 +274,11 @@ export function solveHS(h: number, s: number): BasicProperties {
     case Region.Region2: {
       const P0 = r2Phs(h, s);
       const T0 = newtonRaphson((T) => region2(P0, T).enthalpy - h, 500);
+      const objective = normalizedHsObjective(h, s, (pair) => region2(pair[0], pair[1]));
       const sol = nelderMead(
-        (pair) => Math.abs(region2(pair[0], pair[1]).enthalpy - h) +
-                  Math.abs(region2(pair[0], pair[1]).entropy - s),
+        objective,
         [P0, T0],
+        { maxIterations: 1000, minErrorDelta: 1e-8, minTolerance: 1e-9 },
       );
       return validateBackwardState(
         region2(sol.x[0], sol.x[1]),
@@ -275,10 +294,11 @@ export function solveHS(h: number, s: number): BasicProperties {
       const init = solvePH(P0, h);
       const rho0 = 1 / init.specificVolume;
       const T0 = init.temperature;
+      const objective = normalizedHsObjective(h, s, (pair) => region3ByRhoT(pair[0], pair[1]));
       const sol = nelderMead(
-        (pair) => Math.abs(region3ByRhoT(pair[0], pair[1]).enthalpy - h) +
-                  Math.abs(region3ByRhoT(pair[0], pair[1]).entropy - s),
+        objective,
         [rho0, T0],
+        { maxIterations: 1000, minErrorDelta: 1e-8, minTolerance: 1e-9 },
       );
       return validateBackwardState(
         region3ByRhoT(sol.x[0], sol.x[1]),

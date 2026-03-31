@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## 2.1.5
+
+- fix some issues
+
 ## 2.1.2
 
 - fix some issues

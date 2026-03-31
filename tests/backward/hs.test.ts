@@ -78,6 +78,14 @@ describe('solveHS backward equations', () => {
     expectBackwardValue(back.pressure, 3, 'pressure');
   });
 
+  it('R1: converges for a high-pressure state that previously exhausted Nelder-Mead under raw residual weighting', () => {
+    const forward = region1(34.36897009526966, 596.8403565004468);
+    const backward = solveHS(forward.enthalpy, forward.entropy);
+
+    expectBackwardValue(backward.temperature, forward.temperature, 'temperature');
+    expectBackwardValue(backward.pressure, forward.pressure, 'pressure');
+  });
+
   it('R2: round-trip at T=300K, P=0.0035MPa', () => {
     const fwd = region2(0.0035, 300);
     const back = solveHS(fwd.enthalpy, fwd.entropy);

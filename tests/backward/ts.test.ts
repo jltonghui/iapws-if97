@@ -30,6 +30,18 @@ describe('detectRegionTS', () => {
     expect(detectRegionTS(state.temperature, state.entropy)).toBe(Region.Region3);
   });
 
+  it('detects Region 2 at the critical temperature below the B23 boundary pressure', () => {
+    const state = solvePT(19, Tc);
+    expect(state.region).toBe(Region.Region2);
+    expect(detectRegionTS(state.temperature, state.entropy)).toBe(Region.Region2);
+  });
+
+  it('detects Region 3 at the critical temperature above the B23 boundary pressure', () => {
+    const state = solvePT(22, Tc);
+    expect(state.region).toBe(Region.Region3);
+    expect(detectRegionTS(state.temperature, state.entropy)).toBe(Region.Region3);
+  });
+
   it('detects deferred Region 5 territory', () => {
     const state = solvePT(0.5, 1500);
     expect(detectRegionTS(state.temperature, state.entropy)).toBe(Region.Region5);

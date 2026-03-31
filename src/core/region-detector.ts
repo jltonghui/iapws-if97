@@ -188,7 +188,7 @@ function detectRegionByTemperatureProperty(
       : -1;
   }
 
-  if (T > C.Tc) {
+  if (T >= C.Tc) {
     const p23 = boundary23_T_to_P(T);
     if (inRange(
       value,
@@ -294,7 +294,7 @@ export function detectRegionTH(T: number, h: number): Region | -1 {
       : -1;
   }
 
-  if (T > C.Tc) {
+  if (T >= C.Tc) {
     const p23 = boundary23_T_to_P(T);
     if (inRange(
       h,

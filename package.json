@@ -48,15 +48,17 @@
     "README.md"
   ],
   "engines": {
-    "node": ">=18"
+    "node": ">=20.19.0"
   },
   "publishConfig": {
     "access": "public"
   },
   "sideEffects": false,
   "scripts": {
+    "prebuild": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "build": "tsc",
     "test": "vitest run",
+    "test:package": "npm run build && node scripts/check-package.mjs",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:standards": "vitest run tests/standards-asme tests/standards-cn",

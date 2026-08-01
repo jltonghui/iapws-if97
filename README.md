@@ -1,5 +1,7 @@
 # `iapws-if97`
 
+[![CI](https://github.com/jltonghui/iapws-if97/actions/workflows/ci.yml/badge.svg)](https://github.com/jltonghui/iapws-if97/actions/workflows/ci.yml)
+
 Calculate industrial water and steam properties in Node.js and TypeScript, based on the [IAPWS-IF97](https://www.iapws.org/) standard (International Association for the Properties of Water and Steam — Industrial Formulation 1997).
 
 This library provides forward and backward state solvers, saturation solvers, and transport-property helpers for engineering calculations involving water and steam.
@@ -11,13 +13,9 @@ This library provides forward and backward state solvers, saturation solvers, an
 - Transport properties: viscosity, thermal conductivity, surface tension, dielectric constant, and ionization constant
 - Verified against official IAPWS tables and published engineering references
 
-## Project Origin
-
-> `iapws-if97` is the core calculation engine behind the WeChat Mini Program "汽水计算器" (`wxid: wx7201fd1713b524e5`). Since its launch in 2019, it has served nearly 20,000 users. With the help of AI, this edition has been updated to incorporate `R11-24 (2024)`. I am open-sourcing it in the hope that it will help others with similar engineering needs.
-
-<p align="right">-- Retired Thermodynamic Engineer, Shuping</p>
-
 ## Installation
+
+Requires Node.js `>=20.19.0`. The package publishes ESM and its documented examples use `import`; CommonJS consumption is not part of the tested API.
 
 ```bash
 npm install iapws-if97
@@ -25,7 +23,9 @@ npm install iapws-if97
 
 ## Quick Start
 
-```ts
+Save the following as `example.mjs` and run it with `node example.mjs`:
+
+```js
 import { solve, solvePT, solvePx } from 'iapws-if97';
 
 const a = solvePT(3, 300);
@@ -39,15 +39,20 @@ console.log(c.quality);     // 0.5
 
 ## Main API
 
-- `solvePT(p, T)` // `MPa`, `K`
-- `solvePH(p, h)` // `MPa`, `kJ/kg`
-- `solvePS(p, s)` // `MPa`, `kJ/(kg·K)`
-- `solveHS(h, s)` // `kJ/kg`, `kJ/(kg·K)`
-- `solveTH(T, h)` // `K`, `kJ/kg`
-- `solveTS(T, s)` // `K`, `kJ/(kg·K)`
-- `solvePx(p, x)` // `MPa`, quality `[0, 1]`
-- `solveTx(T, x)` // `K`, quality `[0, 1]`
-- `solve(input)` // same units as the selected `mode`
+| Function | Input pair | Units |
+| --- | --- | --- |
+| `solvePT(p, T)` | pressure, temperature | `MPa`, `K` |
+| `solvePH(p, h)` | pressure, enthalpy | `MPa`, `kJ/kg` |
+| `solvePS(p, s)` | pressure, entropy | `MPa`, `kJ/(kg·K)` |
+| `solveHS(h, s)` | enthalpy, entropy | `kJ/kg`, `kJ/(kg·K)` |
+| `solveTH(T, h)` | temperature, enthalpy | `K`, `kJ/kg` |
+| `solveTS(T, s)` | temperature, entropy | `K`, `kJ/(kg·K)` |
+| `solvePx(p, x)` | pressure, vapor quality | `MPa`, dimensionless `[0, 1]` |
+| `solveTx(T, x)` | temperature, vapor quality | `K`, dimensionless `[0, 1]` |
+
+All numeric inputs must be finite numbers.
+
+### Unified `solve()`
 
 Use `solve({ mode, ... })` when the input pair is determined at runtime:
 
@@ -57,28 +62,31 @@ import { solve } from 'iapws-if97';
 const state = solve({ mode: 'PT', p: 16, T: 823.15 });
 ```
 
-`solve` accepts both short-form and long-form property names:
+Each mode accepts canonical short fields or their long aliases:
+
+| Mode | Short fields | Long aliases |
+| --- | --- | --- |
+| `PT` | `p`, `T` | `pressure`, `temperature` |
+| `PH` | `p`, `h` | `pressure`, `enthalpy` |
+| `PS` | `p`, `s` | `pressure`, `entropy` |
+| `HS` | `h`, `s` | `enthalpy`, `entropy` |
+| `Px` | `p`, `x` | `pressure`, `quality` |
+| `Tx` | `T`, `x` | `temperature`, `quality` |
+| `TH` | `T`, `h` | `temperature`, `enthalpy` |
+| `TS` | `T`, `s` | `temperature`, `entropy` |
 
 ```ts
-const a = solve({ mode: 'PT', p: 16, T: 823.15 });
-const b = solve({ mode: 'PT', pressure: 16, temperature: 823.15 });
+import type { SolveInput } from 'iapws-if97';
+import { solve } from 'iapws-if97';
+
+const shortForm: SolveInput = { mode: 'PT', p: 16, T: 823.15 };
+const longForm: SolveInput = { mode: 'PT', pressure: 16, temperature: 823.15 };
+
+const a = solve(shortForm);
+const b = solve(longForm);
 ```
 
-Supported modes:
-
-```ts
-type SolveInput =
-  | { mode: 'PT'; p: number; T: number }
-  | { mode: 'PH'; p: number; h: number }
-  | { mode: 'PS'; p: number; s: number }
-  | { mode: 'HS'; h: number; s: number }
-  | { mode: 'Px'; p: number; x: number }
-  | { mode: 'Tx'; T: number; x: number }
-  | { mode: 'TH'; T: number; h: number }
-  | { mode: 'TS'; T: number; s: number };
-```
-
-You can use either form for each property. If you provide both, their values must match.
+You can mix short and long names within one input. If both aliases for the same property are present, their values must match exactly. The exported `SolveInput` type is the source of truth for accepted combinations.
 
 ## Solver Return Value
 
@@ -108,7 +116,7 @@ type SteamState = {
 };
 ```
 
-`SteamState` always uses canonical property names. 
+`SteamState` always uses canonical property names.
 
 **Notes:**
 
@@ -140,7 +148,47 @@ type SteamState = {
 
 Any field typed as `number | null` returns `null` when the property is undefined for the given state.
 
+## Advanced Imports
+
+The package root is limited to the main solvers, `SteamState`, `SolveInput`, `Region`, and the public error classes. Lower-level helpers are available from explicit subpaths:
+
+| Subpath | Exports |
+| --- | --- |
+| `iapws-if97/transport` | `viscosity`, `thermalConductivity`, `surfaceTension`, `dielectricConstant`, `ionizationConstant` |
+| `iapws-if97/regions` | `region1`, `region2`, `region3ByRhoT`, `region5` |
+| `iapws-if97/saturation` | `saturationPressure`, `saturationTemperature` |
+| `iapws-if97/boundaries` | `boundary23_T_to_P`, `boundary23_P_to_T`, `region3Volume`, `region3SatVolume` |
+| `iapws-if97/detect` | `detectRegionPT`, `detectRegionPH`, `detectRegionPS`, `detectRegionHS`, `detectRegionTH`, `detectRegionTS` |
+
+```ts
+import { viscosity } from 'iapws-if97/transport';
+import { region1 } from 'iapws-if97/regions';
+import { saturationTemperature } from 'iapws-if97/saturation';
+import { detectRegionPT } from 'iapws-if97/detect';
+```
+
+These are low-level mathematical interfaces:
+
+- Region functions return core thermodynamic properties without `density` or transport-property enrichment.
+- Region, boundary, and detection helpers expect callers to respect the corresponding equation domains. Detection helpers return a `Region` value or `-1` when no valid region is found.
+- `thermalConductivity(T, rho)` calculates the base contribution. Pass `cp`, `cv`, `drhodP_T`, and `mu` to include the IAPWS 2011 critical-enhancement term.
+- `surfaceTension(T)` is a saturation-line property. `saturationPressure(T)` and `saturationTemperature(p)` expose the mathematical Region 4 boundary and are more permissive at endpoints than `solveTx` and `solvePx`.
+
+## Transport Correlation Limits
+
+Transport correlations have validity ranges independent of the IF97 thermodynamic envelope. The library may return extrapolated values where noted:
+
+| Property | Implemented behavior |
+| --- | --- |
+| Viscosity | Uses the IAPWS 2008 dilute-gas and finite-density terms. The near-critical enhancement is omitted, as permitted for industrial use by the release. |
+| Thermal conductivity | Full `SteamState` calculations include the IAPWS 2011 critical enhancement. The two-argument low-level call does not. Values above the release's temperature range are extrapolations. |
+| Surface tension | Defined for saturation states below the critical point. The low-level helper permits `273.15 K ≤ T ≤ Tc`; values below the triple point `Tt = 273.16 K` are extrapolations. |
+| Dielectric constant | The IAPWS 1997 release is valid through `873 K`. The low-level helper does not enforce that upper bound, so higher-temperature results are extrapolations. |
+| Ionization constant (`pKw`) | Returns `null` outside `273.15 K ≤ T ≤ 1273.15 K`. The release's `1000 MPa` pressure limit describes the correlation, not the state-solver pressure range. |
+
 ## Saturation Endpoint
+
+The triple and critical points are `Pt = 0.000611657 MPa`, `Tt = 273.16 K`, `Pc = 22.064 MPa`, and `Tc = 647.096 K`.
 
 - Low-level Region 4 helpers stay mathematically permissive and high-level saturation state solvers are stricter:
   - `solvePx(p, x)` accepts `Pt ≤ p < Pc`
@@ -160,14 +208,18 @@ The library throws typed errors:
 | --- | --- |
 | `OutOfRangeError` | Input is outside the supported IF97 range |
 | `ConvergenceError` | An internal iterative solve failed to converge |
-| `IF97Error` | Base class for all library-specific errors |
+| `IF97Error` | Base class; root solvers also use it directly for non-numeric or non-finite inputs, conflicting aliases, unsupported modes, and unsupported critical-point states |
 
-## Validity Notes
+Numeric inputs to root solvers and transport helpers must be finite. Low-level region, boundary, and detection helpers rely on callers to respect their equation domains. `solvePT(Pc, Tc)`, exact critical Region 4 states, and `solveTH`/`solveTS` inputs within `0.001 K` of `Tc` are rejected because the required derivative properties or inverse solution are singular or ill-conditioned.
 
-- Thermodynamic properties follow IF97 validity ranges: up to `100 MPa` and `2273.15 K` (including Region 5).
-- Surface tension applies only along the saturation line below the critical point.
-- Thermal conductivity follows the IAPWS 2011 release.
-- Ionization constant follows the IAPWS 2024 revised release, valid for stable fluid states from `273.15 K` to `1273.15 K` and up to `1000 MPa`.
+## Thermodynamic Validity
+
+The thermodynamic solvers follow the piecewise IF97 industrial range:
+
+- `273.15 K ≤ T ≤ 1073.15 K`: pressure up to `100 MPa`.
+- `1073.15 K < T ≤ 2273.15 K` (Region 5): pressure up to `50 MPa`.
+
+Transport-property limits are separate; see [Transport Correlation Limits](#transport-correlation-limits).
 
 ## Verification
 
@@ -181,11 +233,17 @@ The test suite covers:
 - Coverage thresholds enforced locally
 - ASME and GB/T steam-table comparisons against published values
 
-To run locally:
+For a clean local verification run:
 
 ```bash
-npm run build
+npm ci
+npm run test:package
 npm test
+```
+
+`test:package` performs a clean build and checks the dry-run npm tarball, including dangling source-map references. Coverage and published-table comparisons are available separately:
+
+```bash
 npm run test:coverage
 npm run test:standards
 ```
@@ -196,45 +254,18 @@ npm run test:standards
 
 This Mollier `h-s` diagram was generated with `iapws-if97` as a practical end-to-end validation artifact.
 
-### ASME Validation Snapshot
+Published-reference comparisons are summarized below. Both suites enforce `maxRelativeError < 5e-4` (less than `0.05%`).
 
-Compares saturation states against *ASME International Steam Tables for Industrial Use*, 3rd ed., Table S-2 ("Properties of Saturated Water and Steam — Pressure").
-Each case checks 7 values: saturation temperature, liquid/vapor specific volume, enthalpy, and entropy.
-The snapshot below reflects the current `tests/standards-asme` regression run.
+| Reference | Coverage | Points checked | Worst relative error |
+| --- | --- | ---: | ---: |
+| *ASME International Steam Tables for Industrial Use*, 3rd ed., Table S-2 | Saturation states at 6 pressures | 42 | `0.0315405%` |
+| *GB/T 34060-2017*, Table A.3(续), page 55 | Superheated steam at `10 MPa` and 6 temperatures | 24 | `0.0007020%` |
 
-| ASME case | Pressure (MPa) | Points checked | Max relative error |
-| --- | ---: | ---: | ---: |
-| Table S-2 @ 0.01 MPa | 0.01 | 7 | 0.0257993% |
-| Table S-2 @ 0.10 MPa | 0.10 | 7 | 0.0141744% |
-| Table S-2 @ 1.00 MPa | 1.00 | 7 | 0.0207405% |
-| Table S-2 @ 5.0 MPa | 5.0 | 7 | 0.0315405% |
-| Table S-2 @ 10.0 MPa | 10.0 | 7 | 0.0261599% |
-| Table S-2 @ 20.0 MPa | 20.0 | 7 | 0.0173004% |
-| Overall worst case | - | 42 | 0.0315405% |
-
-The current ASME regression threshold is `maxRelativeError < 5e-4` (less than `0.05%`).
-
-### GB/T Validation Snapshot
-
-Compares superheated-steam states against *GB/T 34060-2017*, Table A.3(续), page 55.
-Each case checks 4 values at `10 MPa`: specific volume, enthalpy, entropy, and speed of sound.
-The snapshot below reflects the current `tests/standards-cn` regression run.
-
-| GB/T case | Pressure (MPa) | Temperature (°C) | Points checked | Max relative error |
-| --- | ---: | ---: | ---: | ---: |
-| Table A.3 @ 10 MPa, 350 C | 10 | 350 | 4 | 0.0007020% |
-| Table A.3 @ 10 MPa, 400 C | 10 | 400 | 4 | 0.0004650% |
-| Table A.3 @ 10 MPa, 500 C | 10 | 500 | 4 | 0.0006808% |
-| Table A.3 @ 10 MPa, 600 C | 10 | 600 | 4 | 0.0005630% |
-| Table A.3 @ 10 MPa, 700 C | 10 | 700 | 4 | 0.0004072% |
-| Table A.3 @ 10 MPa, 800 C | 10 | 800 | 4 | 0.0004146% |
-| Overall worst case | - | - | 24 | 0.0007020% |
-
-The current GB/T regression threshold is `maxRelativeError < 5e-4` (less than `0.05%`).
+See [`tests/standards-asme`](tests/standards-asme) and [`tests/standards-cn`](tests/standards-cn) for the source values and per-case comparisons.
 
 ## TypeScript
 
-The package ships with bundled TypeScript declarations and ESM exports.
+The package ships with generated TypeScript declarations for the root and every public subpath.
 
 ```ts
 import type { SolveInput, SteamState } from 'iapws-if97';
@@ -251,11 +282,20 @@ if (state.region === Region.Region1) {
 ## References
 
 - [IAPWS official website](https://www.iapws.org/)
-- IAPWS R7-97(2012), Revised Release on the IAPWS Industrial Formulation 1997 for the Thermodynamic Properties of Water and Steam
-- IAPWS supplementary releases for backward equations `T(p,h)`, `T(p,s)`, and `p(h,s)`
-- IAPWS R15-11, Thermal Conductivity of Ordinary Water Substance
-- IAPWS R1-76(2014), Surface Tension of Ordinary Water Substance
-- IAPWS R11-24, Revised Release on the Ionization Constant of H2O
+- [IAPWS R7-97(2012), Industrial Formulation 1997](https://www.iapws.org/relguide/IF97-Rev.html)
+- [IAPWS supplementary releases](https://www.iapws.org/release.html) for `T(p,h)`, `T(p,s)`, `p(h,s)`, Region 3 boundary equations, `Tsat(h,s)`, and `v(p,T)`
+- [IAPWS SR4-04(2014), Region 3 `p(h,s)` and Region 4 `Tsat(h,s)`](https://iapws.org/documents/release/Supp-phs3-2014)
+- [IAPWS R12-08, Viscosity of Ordinary Water Substance](https://www.iapws.org/relguide/viscosity.html)
+- [IAPWS R15-11, Thermal Conductivity of Ordinary Water Substance](https://www.iapws.org/relguide/ThCond.html)
+- [IAPWS R8-97, Static Dielectric Constant of Ordinary Water Substance](https://www.iapws.org/relguide/dielec.pdf)
+- [IAPWS R1-76(2014), Surface Tension of Ordinary Water Substance](https://www.iapws.org/relguide/Surf-H2O.html)
+- [IAPWS R11-24, Ionization Constant of H2O](https://www.iapws.org/relguide/Ionization.html)
+
+## Project Origin
+
+> `iapws-if97` is the core calculation engine behind the WeChat Mini Program "汽水计算器" (`wxid: wx7201fd1713b524e5`). Since its launch in 2019, it has served nearly 20,000 users. With the help of AI, this edition has been updated to incorporate `R11-24 (2024)`. I am open-sourcing it in the hope that it will help others with similar engineering needs.
+
+<p align="right">-- Retired Thermodynamic Engineer, Shuping</p>
 
 ## License
 

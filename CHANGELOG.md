@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## 2.2.0
+
+### Fixed
+
+- Improved backward-solver accuracy, robustness, and performance.
+- Fixed saturation-region detection and package validation.
+- Requires Node.js `>=20.19.0`.
+
 ## 2.1.5
 
 - fix some issues

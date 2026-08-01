@@ -55,8 +55,14 @@ describe('backward solver validity guards', () => {
     expect(() => solvePH(38.09426710643904, 7375.591808802688)).toThrow(IF97Error);
   });
 
-  it('solvePS rejects a false Region 2 state outside the IF97 PT envelope', () => {
-    expect(() => solvePS(71.99643178391858, 5.870236071132793)).toThrow(IF97Error);
+  it('solvePS recovers a high-pressure Region 2 state from an inaccurate backward seed', () => {
+    const pressure = 71.99643178391858;
+    const entropy = 5.870236071132793;
+    const state = solvePS(pressure, entropy);
+
+    expect(state.region).toBe(Region.Region2);
+    expectBackwardValue(state.temperature, 956.269402787816, 'temperature');
+    expectBackwardValue(state.entropy, entropy, 'entropy');
   });
 
   it('solvePS rejects a false Region 5 state above the IF97 temperature ceiling', () => {

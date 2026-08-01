@@ -2,7 +2,7 @@
  * IAPWS-IF97 Backward Equations: H-S -> P, T
  *
  * Given specific enthalpy and entropy, compute pressure and temperature.
- * Uses backward P(h,s) equations for initial guess + Nelder-Mead refinement.
+ * Uses backward P(h,s) equations for initial guesses + damped Newton refinement.
  *
  * Reference: IAPWS-IF97 Supplementary Release on Backward Equations p(h,s)
  */
@@ -16,12 +16,13 @@ import { region3ByRhoT } from '../regions/region3.js';
 import { region5 } from '../regions/region5.js';
 import { assertFiniteNumber } from '../core/input-validation.js';
 import { detectRegionHS } from '../core/region-detector.js';
-import { newtonRaphson } from '../solvers/newton-raphson.js';
-import { nelderMead } from '../solvers/nelder-mead.js';
-import { solvePH } from './ph.js';
+import { dampedNewton2D } from '../solvers/damped-newton-2d.js';
+import { r1BackwardT, r2BackwardT, r3BackwardPHInitial } from './ph.js';
 import { validateBackwardState } from './solution-validation.js';
-import { sumNormalizedResiduals } from './objective-normalization.js';
-import { backwardConstraintTolerance } from './tolerances.js';
+import {
+  gibbsPropertyDerivatives,
+  helmholtzPropertyDerivatives,
+} from './thermodynamic-derivatives.js';
 import {
   tryRegion4HSState,
 } from '../saturation/region4-hs.js';
@@ -183,41 +184,58 @@ function r3Phs(h: number, s: number): number {
   return r3bPhs(h, s);
 }
 
-const REGION5_HS_OUT_OF_DOMAIN_PENALTY = 1e18;
-
-function normalizedHsObjective(
+function solveGibbsHS(
   h: number,
   s: number,
-  stateAt: (pair: number[]) => BasicProperties,
-): (pair: number[]) => number {
-  const enthalpyTolerance = backwardConstraintTolerance('enthalpy', h);
-  const entropyTolerance = backwardConstraintTolerance('entropy', s);
-
-  return (pair: number[]): number => {
-    const state = stateAt(pair);
-    return sumNormalizedResiduals([
-      { actual: state.enthalpy, expected: h, tolerance: enthalpyTolerance },
-      { actual: state.entropy, expected: s, tolerance: entropyTolerance },
-    ]);
-  };
+  initial: readonly [number, number],
+  stateAt: (p: number, T: number) => BasicProperties,
+): BasicProperties {
+  const hScale = Math.max(1, Math.abs(h));
+  const sScale = Math.max(1, Math.abs(s));
+  const [p, T] = dampedNewton2D(([candidateP, candidateT]) => {
+    const state = stateAt(candidateP, candidateT);
+    const derivatives = gibbsPropertyDerivatives(state);
+    return {
+      residual: [
+        (state.enthalpy - h) / hScale,
+        (state.entropy - s) / sScale,
+      ],
+      jacobian: [
+        [derivatives.dhDp / hScale, derivatives.dhDT / hScale],
+        [derivatives.dsDp / sScale, derivatives.dsDT / sScale],
+      ],
+    };
+  }, initial, {
+    isValid: ([candidateP, candidateT]) => candidateP > 0 && candidateT > 0,
+  });
+  return stateAt(p, T);
 }
 
-function normalizedRegion5HsObjective(h: number, s: number): (pair: number[]) => number {
-  const enthalpyTolerance = backwardConstraintTolerance('enthalpy', h);
-  const entropyTolerance = backwardConstraintTolerance('entropy', s);
-
-  return (pair: number[]): number => {
-    const [p, T] = pair;
-    if (p <= 0 || p > C.R5_P_MAX || T <= C.R5_T_MIN || T > C.R5_T_MAX) {
-      return REGION5_HS_OUT_OF_DOMAIN_PENALTY;
-    }
-
-    const state = region5(p, T);
-    return sumNormalizedResiduals([
-      { actual: state.enthalpy, expected: h, tolerance: enthalpyTolerance },
-      { actual: state.entropy, expected: s, tolerance: entropyTolerance },
-    ]);
-  };
+function solveRegion3HS(h: number, s: number, rho0: number, T0: number): BasicProperties {
+  const hScale = Math.max(1, Math.abs(h));
+  const sScale = Math.max(1, Math.abs(s));
+  const [rho, T] = dampedNewton2D(([candidateRho, candidateT]) => {
+    const state = region3ByRhoT(candidateRho, candidateT);
+    const derivatives = helmholtzPropertyDerivatives(state, candidateRho);
+    return {
+      residual: [
+        (state.enthalpy - h) / hScale,
+        (state.entropy - s) / sScale,
+      ],
+      jacobian: [
+        [derivatives.dhDrho / hScale, derivatives.dhDT / hScale],
+        [derivatives.dsDrho / sScale, derivatives.dsDT / sScale],
+      ],
+    };
+  }, [rho0, T0], {
+    // Tighter than the 1e-10 default and load-bearing: near the 100 MPa ceiling
+    // Region 3 is nearly incompressible, so a residual the default would accept
+    // still lands p far enough outside [P_MIN, P_MAX] to fail envelope
+    // validation. Covered by the p=100 MPa cases in newton-regressions.test.ts.
+    tolerance: 1e-12,
+    isValid: ([candidateRho, candidateT]) => candidateRho > 0 && candidateT > 0,
+  });
+  return region3ByRhoT(rho, T);
 }
 
 // ─── Main HS Solver ─────────────────────────────────────────────────────────
@@ -239,31 +257,14 @@ export function solveHS(h: number, s: number): BasicProperties {
   }
   assertCriticalRegion4HSInput(h, s, 'solveHS');
 
-  const region4State = tryRegion4HSState(h, s);
-  if (region4State !== null) {
-    return validateBackwardState(
-      region4State,
-      [
-        { label: 'enthalpy', expected: h },
-        { label: 'entropy', expected: s },
-      ],
-      { solverName: 'solveHS', expectedRegion: Region.Region4 },
-    );
-  }
-
   const region = detectRegionHS(h, s);
 
   switch (region) {
     case Region.Region1: {
       const P0 = r1Phs(h, s);
-      const objective = normalizedHsObjective(h, s, (pair) => region1(pair[0], pair[1]));
-      const sol = nelderMead(
-        objective,
-        [P0, 400],
-        { maxIterations: 1000, minErrorDelta: 1e-8, minTolerance: 1e-9 },
-      );
+      const state = solveGibbsHS(h, s, [P0, r1BackwardT(P0, h)], region1);
       return validateBackwardState(
-        region1(sol.x[0], sol.x[1]),
+        state,
         [
           { label: 'enthalpy', expected: h },
           { label: 'entropy', expected: s },
@@ -273,15 +274,9 @@ export function solveHS(h: number, s: number): BasicProperties {
     }
     case Region.Region2: {
       const P0 = r2Phs(h, s);
-      const T0 = newtonRaphson((T) => region2(P0, T).enthalpy - h, 500);
-      const objective = normalizedHsObjective(h, s, (pair) => region2(pair[0], pair[1]));
-      const sol = nelderMead(
-        objective,
-        [P0, T0],
-        { maxIterations: 1000, minErrorDelta: 1e-8, minTolerance: 1e-9 },
-      );
+      const state = solveGibbsHS(h, s, [P0, r2BackwardT(P0, h)], region2);
       return validateBackwardState(
-        region2(sol.x[0], sol.x[1]),
+        state,
         [
           { label: 'enthalpy', expected: h },
           { label: 'entropy', expected: s },
@@ -291,17 +286,10 @@ export function solveHS(h: number, s: number): BasicProperties {
     }
     case Region.Region3: {
       const P0 = r3Phs(h, s);
-      const init = solvePH(P0, h);
-      const rho0 = 1 / init.specificVolume;
-      const T0 = init.temperature;
-      const objective = normalizedHsObjective(h, s, (pair) => region3ByRhoT(pair[0], pair[1]));
-      const sol = nelderMead(
-        objective,
-        [rho0, T0],
-        { maxIterations: 1000, minErrorDelta: 1e-8, minTolerance: 1e-9 },
-      );
+      const initial = r3BackwardPHInitial(P0, h);
+      const state = solveRegion3HS(h, s, initial.rho, initial.T);
       return validateBackwardState(
-        region3ByRhoT(sol.x[0], sol.x[1]),
+        state,
         [
           { label: 'enthalpy', expected: h },
           { label: 'entropy', expected: s },
@@ -310,17 +298,23 @@ export function solveHS(h: number, s: number): BasicProperties {
       );
     }
     case Region.Region4: {
-      throw new IF97Error('solveHS identified Region 4 but failed to construct a valid saturation state');
+      const state = tryRegion4HSState(h, s);
+      if (state === null) {
+        throw new IF97Error('solveHS identified Region 4 but failed to construct a valid saturation state');
+      }
+      return validateBackwardState(
+        state,
+        [
+          { label: 'enthalpy', expected: h },
+          { label: 'entropy', expected: s },
+        ],
+        { solverName: 'solveHS', expectedRegion: Region.Region4 },
+      );
     }
     case Region.Region5: {
-      const objective = normalizedRegion5HsObjective(h, s);
-      const sol = nelderMead(
-        objective,
-        [1, 1400],
-        { maxIterations: 1000, minErrorDelta: 1e-8, minTolerance: 1e-9 },
-      );
+      const state = solveGibbsHS(h, s, [1, 1400], region5);
       return validateBackwardState(
-        region5(sol.x[0], sol.x[1]),
+        state,
         [
           { label: 'enthalpy', expected: h },
           { label: 'entropy', expected: s },

@@ -13,7 +13,7 @@ import { region2 } from '../regions/region2.js';
 import { region3ByRhoT } from '../regions/region3.js';
 import { saturationPressure, saturationTemperature } from '../regions/region4.js';
 import { region3SatVolume } from '../regions/region3-subregions.js';
-import { newtonRaphson } from '../solvers/newton-raphson.js';
+import { solveRegion3StateAtPressure } from '../core/region3-pt.js';
 import {
   normalizeRegion4Pressure,
   normalizeRegion4Temperature,
@@ -33,23 +33,14 @@ function withRegion4Metadata(state: BasicProperties, quality: number): BasicProp
 }
 
 /**
- * Iteratively solve for Region 3 density at saturation.
+ * Solve for the Region 3 saturation endpoint state.
  *
  * @param p - Saturation pressure [MPa]
  * @param T - Saturation temperature [K]
  * @param x - Phase indicator: 0 = liquid, 1 = vapour
  */
-function solveR3Density(p: number, T: number, x: 0 | 1): number {
-  const v0 = region3SatVolume(p, T, x);
-  return newtonRaphson(
-    (rho) => {
-      if (!Number.isFinite(rho) || rho <= 0) {
-        return Number.NaN;
-      }
-      return region3ByRhoT(rho, T).pressure - p;
-    },
-    1 / v0,
-  );
+function solveR3Endpoint(p: number, T: number, x: 0 | 1): BasicProperties {
+  return solveRegion3StateAtPressure(p, T, 1 / region3SatVolume(p, T, x));
 }
 
 /** Clamp vapour quality to [0, 1], snapping near-zero/one values to the boundary. */
@@ -106,8 +97,8 @@ export function saturationEndpointsAtPressure(p: number): SaturationEndpoints {
     return {
       pressure,
       temperature,
-      liquid: region3ByRhoT(solveR3Density(pressure, temperature, 0), temperature),
-      vapor: region3ByRhoT(solveR3Density(pressure, temperature, 1), temperature),
+      liquid: solveR3Endpoint(pressure, temperature, 0),
+      vapor: solveR3Endpoint(pressure, temperature, 1),
     };
   }
 

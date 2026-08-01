@@ -25,8 +25,6 @@ import { assertRegion4StateAllowed } from '../saturation/region4-boundaries.js';
 import { solveFixedTemperaturePressure } from './fixed-temperature-solver.js';
 import { validateBackwardState } from './solution-validation.js';
 
-const extractS = (s: BasicProperties) => s.entropy;
-
 /**
  * Solve for full basic thermodynamic state from temperature and entropy.
  *
@@ -65,7 +63,7 @@ export function solveTS(T: number, s: number): BasicProperties {
       return validateBackwardState(solveFixedTemperaturePressure(
         region1, T, s,
         saturationPressure(T), C.P_MAX,
-        extractS, 'solveTS',
+        'entropy', 'solveTS',
       ), [
         { label: 'temperature', expected: T },
         { label: 'entropy', expected: s },
@@ -82,7 +80,7 @@ export function solveTS(T: number, s: number): BasicProperties {
       return validateBackwardState(solveFixedTemperaturePressure(
         region2, T, s,
         C.P_MIN, upper,
-        extractS, 'solveTS',
+        'entropy', 'solveTS',
       ), [
         { label: 'temperature', expected: T },
         { label: 'entropy', expected: s },
@@ -98,7 +96,7 @@ export function solveTS(T: number, s: number): BasicProperties {
       return validateBackwardState(solveFixedTemperaturePressure(
         solveRegion3PTBasic, T, s,
         lower, C.P_MAX,
-        extractS, 'solveTS',
+        'entropy', 'solveTS',
       ), [
         { label: 'temperature', expected: T },
         { label: 'entropy', expected: s },
@@ -128,7 +126,7 @@ export function solveTS(T: number, s: number): BasicProperties {
       return validateBackwardState(solveFixedTemperaturePressure(
         region5, T, s,
         C.P_MIN, C.R5_P_MAX,
-        extractS, 'solveTS',
+        'entropy', 'solveTS',
       ), [
         { label: 'temperature', expected: T },
         { label: 'entropy', expected: s },

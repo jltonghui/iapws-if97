@@ -2,9 +2,9 @@
 
 [![CI](https://github.com/jltonghui/iapws-if97/actions/workflows/ci.yml/badge.svg)](https://github.com/jltonghui/iapws-if97/actions/workflows/ci.yml)
 
-Calculate industrial water and steam properties in Node.js and TypeScript, based on the [IAPWS-IF97](https://www.iapws.org/) standard (International Association for the Properties of Water and Steam — Industrial Formulation 1997).
+`iapws-if97` calculates industrial water and steam properties in Node.js and TypeScript using the [IAPWS-IF97](https://www.iapws.org/) standard published by the International Association for the Properties of Water and Steam.
 
-This library provides forward and backward state solvers, saturation solvers, and transport-property helpers for engineering calculations involving water and steam.
+It includes forward and backward state solvers, saturation solvers, and transport-property helpers.
 
 ## Features
 
@@ -15,13 +15,13 @@ This library provides forward and backward state solvers, saturation solvers, an
 
 ## Installation
 
-Requires Node.js `>=20.19.0`. The package publishes ESM and its documented examples use `import`; CommonJS consumption is not part of the tested API.
+Requires Node.js `>=20.19.0`. The package publishes ESM, and all documented examples use `import`. CommonJS is not part of the tested API.
 
 ```bash
 npm install iapws-if97
 ```
 
-## Quick Start
+## Quick start
 
 Save the following as `example.mjs` and run it with `node example.mjs`:
 
@@ -88,7 +88,7 @@ const b = solve(longForm);
 
 You can mix short and long names within one input. If both aliases for the same property are present, their values must match exactly. The exported `SolveInput` type is the source of truth for accepted combinations.
 
-## Solver Return Value
+## Solver return value
 
 All solvers return a `SteamState` object containing both thermodynamic and transport properties:
 
@@ -120,12 +120,12 @@ type SteamState = {
 
 **Notes:**
 
-- `quality` is `null` for single-phase states — it is only defined on the saturation line.
+- `quality` is `null` for single-phase states; it is only defined on the saturation line.
 - In two-phase mixtures (`0 < x < 1`), `cp`, `cv`, `speedOfSound`, `isobaricExpansion`, `isothermalCompressibility`, `viscosity`, `thermalConductivity`, `dielectricConstant`, and `ionizationConstant` are `null`.
 - Saturation endpoints (`x = 0` or `x = 1`) still expose single-phase transport properties even though they carry Region 4 metadata.
 - `solvePT(p, T)` is a single-phase solver. On the subcritical saturation boundary it resolves to the liquid side.
 - `surfaceTension` is only available for Region 4 saturation states below the critical point; otherwise `null`.
-- `density` is provided directly — no need to invert `specificVolume`.
+- `density` is provided directly, so there is no need to invert `specificVolume`.
 - `ionizationConstant` is `null` outside the IAPWS validity range for that correlation.
 
 ## Units
@@ -148,7 +148,7 @@ type SteamState = {
 
 Any field typed as `number | null` returns `null` when the property is undefined for the given state.
 
-## Advanced Imports
+## Advanced imports
 
 The package root is limited to the main solvers, `SteamState`, `SolveInput`, `Region`, and the public error classes. Lower-level helpers are available from explicit subpaths:
 
@@ -174,7 +174,7 @@ These are low-level mathematical interfaces:
 - `thermalConductivity(T, rho)` calculates the base contribution. Pass `cp`, `cv`, `drhodP_T`, and `mu` to include the IAPWS 2011 critical-enhancement term.
 - `surfaceTension(T)` is a saturation-line property. `saturationPressure(T)` and `saturationTemperature(p)` expose the mathematical Region 4 boundary and are more permissive at endpoints than `solveTx` and `solvePx`.
 
-## Transport Correlation Limits
+## Transport correlation limits
 
 Transport correlations have validity ranges independent of the IF97 thermodynamic envelope. The library may return extrapolated values where noted:
 
@@ -186,21 +186,21 @@ Transport correlations have validity ranges independent of the IF97 thermodynami
 | Dielectric constant | The IAPWS 1997 release is valid through `873 K`. The low-level helper does not enforce that upper bound, so higher-temperature results are extrapolations. |
 | Ionization constant (`pKw`) | Returns `null` outside `273.15 K ≤ T ≤ 1273.15 K`. The release's `1000 MPa` pressure limit describes the correlation, not the state-solver pressure range. |
 
-## Saturation Endpoint
+## Saturation endpoints
 
 The triple and critical points are `Pt = 0.000611657 MPa`, `Tt = 273.16 K`, `Pc = 22.064 MPa`, and `Tc = 647.096 K`.
 
-- Low-level Region 4 helpers stay mathematically permissive and high-level saturation state solvers are stricter:
+- Low-level Region 4 helpers accept a wider endpoint range. The saturation state solvers use these stricter bounds:
   - `solvePx(p, x)` accepts `Pt ≤ p < Pc`
   - `solveTx(T, x)` accepts `Tt = 273.16 K ≤ T < Tc`
-- The true triple point is supported as a saturation-state boundary:
+- The triple point is supported as a saturation-state boundary:
   - `solvePx(Pt, x)` is valid
   - `solveTx(Tt, x)` is valid
 - `273.15 K` is treated as a low-level extrapolation boundary only.
-- The exact critical point is never returned as a Region 4 state.
-- `solveTH(T, h)` and `solveTS(T, s)` keep a small exclusion band around `Tc` and reject inputs within `0.001 K` of the critical temperature.
+- The solvers do not return the exact critical point as a Region 4 state.
+- `solveTH(T, h)` and `solveTS(T, s)` reject inputs within `0.001 K` of the critical temperature.
 
-## Errors and Limits
+## Errors and limits
 
 The library throws typed errors:
 
@@ -212,14 +212,14 @@ The library throws typed errors:
 
 Numeric inputs to root solvers and transport helpers must be finite. Low-level region, boundary, and detection helpers rely on callers to respect their equation domains. `solvePT(Pc, Tc)`, exact critical Region 4 states, and `solveTH`/`solveTS` inputs within `0.001 K` of `Tc` are rejected because the required derivative properties or inverse solution are singular or ill-conditioned.
 
-## Thermodynamic Validity
+## Thermodynamic validity
 
 The thermodynamic solvers follow the piecewise IF97 industrial range:
 
 - `273.15 K ≤ T ≤ 1073.15 K`: pressure up to `100 MPa`.
 - `1073.15 K < T ≤ 2273.15 K` (Region 5): pressure up to `50 MPa`.
 
-Transport-property limits are separate; see [Transport Correlation Limits](#transport-correlation-limits).
+Transport-property limits are separate; see [Transport correlation limits](#transport-correlation-limits).
 
 ## Verification
 
@@ -241,20 +241,20 @@ npm run test:package
 npm test
 ```
 
-`test:package` performs a clean build and checks the dry-run npm tarball, including dangling source-map references. Coverage and published-table comparisons are available separately:
+`test:package` performs a clean build and checks that the dry-run npm tarball has no dangling source-map references. Coverage and published-table comparisons are available separately:
 
 ```bash
 npm run test:coverage
 npm run test:standards
 ```
 
-## Integration Validation
+## Integration validation
 
 ![Mollier h-s diagram generated with iapws-if97](https://raw.githubusercontent.com/jltonghui/iapws-if97/main/assets/pics/mollier-hs-diagram.svg)
 
-This Mollier `h-s` diagram was generated with `iapws-if97` as a practical end-to-end validation artifact.
+This Mollier `h-s` diagram was generated with `iapws-if97` as an end-to-end check of the calculation pipeline.
 
-Published-reference comparisons are summarized below. Both suites enforce `maxRelativeError < 5e-4` (less than `0.05%`).
+The standards tests check the published tables below. Both suites enforce `maxRelativeError < 5e-4` (less than `0.05%`).
 
 | Reference | Coverage | Points checked | Worst relative error |
 | --- | --- | ---: | ---: |
@@ -291,11 +291,11 @@ if (state.region === Region.Region1) {
 - [IAPWS R1-76(2014), Surface Tension of Ordinary Water Substance](https://www.iapws.org/relguide/Surf-H2O.html)
 - [IAPWS R11-24, Ionization Constant of H2O](https://www.iapws.org/relguide/Ionization.html)
 
-## Project Origin
+## Project origin
 
-> `iapws-if97` is the core calculation engine behind the WeChat Mini Program "汽水计算器" (`wxid: wx7201fd1713b524e5`). Since its launch in 2019, it has served nearly 20,000 users. With the help of AI, this edition has been updated to incorporate `R11-24 (2024)`. I am open-sourcing it in the hope that it will help others with similar engineering needs.
+> `iapws-if97` began as the calculation engine behind the WeChat Mini Program "汽水计算器" (`wxid: wx7201fd1713b524e5`). Since its 2019 launch, it has served more than 20,000 users. AI-assisted review helped bring this open-source edition up to date with IAPWS `R11-24 (2024)`. I am sharing the engine so it can reach engineers far beyond the original program.
 
-<p align="right">-- Retired Thermodynamic Engineer, Shuping</p>
+<p align="right">Shuping, retired thermodynamic engineer</p>
 
 ## License
 

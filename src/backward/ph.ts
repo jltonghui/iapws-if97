@@ -18,10 +18,9 @@ import { saturationTemperature } from '../regions/region4.js';
 import { assertFiniteNumber } from '../core/input-validation.js';
 import { detectRegionPH } from '../core/region-detector.js';
 import { newtonRaphson } from '../solvers/newton-raphson.js';
-import { nelderMead } from '../solvers/nelder-mead.js';
+import { dampedNewton2D } from '../solvers/damped-newton-2d.js';
 import { validateBackwardState } from './solution-validation.js';
-import { backwardConstraintTolerance } from './tolerances.js';
-import { sumNormalizedResiduals } from './objective-normalization.js';
+import { helmholtzPropertyDerivatives } from './thermodynamic-derivatives.js';
 import {
   mixSaturationState,
   qualityFromSaturationProperty,
@@ -53,7 +52,7 @@ const R1_PH: CoefficientTable = [
   [5,32,5.8265442020601e-15],[6,32,-1.5020185953503e-17],
 ] as const;
 
-function r1BackwardT(p: number, h: number): number {
+export function r1BackwardT(p: number, h: number): number {
   return evalPoly(R1_PH, 0, -1, p, h / 2500);
 }
 
@@ -64,9 +63,10 @@ function r1BackwardT(p: number, h: number): number {
 // directly; above this threshold use the B2bc(h) boundary to discriminate 2b/2c.
 const R2_PH_B2BC_P_MIN = 6.546699678;
 
-// B2bc boundary (exported for future use)
+/** B2bc boundary: h → p, discriminating subregions 2b and 2c.
+ *  Ref: IAPWS-IF97, Eq. 20. Check point: h = 3516.004323 → p = 100 MPa. */
 export function b2bc_H_P(h: number): number {
-  return 0.90584278514723e-3 - 0.67955786399241 * h + 0.12809002730136e-3 * h * h;
+  return 0.90584278514723e3 - 0.67955786399241 * h + 0.12809002730136e-3 * h * h;
 }
 
 // Subregion 2a — Eq. 22
@@ -120,7 +120,7 @@ function r2cBackwardT(p: number, h: number): number {
   return evalPoly(R2C_PH, -25, 1.8, p, h / 2000);
 }
 
-function r2BackwardT(p: number, h: number): number {
+export function r2BackwardT(p: number, h: number): number {
   let T: number;
   if (p <= C.R2_P_CRT) {
     T = r2aBackwardT(p, h);
@@ -142,7 +142,7 @@ function r2BackwardT(p: number, h: number): number {
 // ─── Region 3 Backward T(P,H) and v(P,H) ──────────────────────────────────
 
 /** B3ab boundary: P → H */
-export function b3ab_P_to_H(p: number): number {
+function b3ab_P_to_H(p: number): number {
   return 2014.64004206875 + 3.74696550136983 * p - 0.0219921901054187 * p * p + 0.000087513168600995 * p * p * p;
 }
 
@@ -201,23 +201,38 @@ const R3B_PH_V: CoefficientTable = [
   [1,1,0.0371810116332674],[2,2,-0.0536288335065096],[2,6,1.6069710109252],
 ] as const;
 
-// R4: saturation pressure boundary from enthalpy
-const R4_H_PSAT: CoefficientTable = [
-  [0,0,0.600073641753024],[1,1,-9.36203654849857],[1,3,24.6590798594147],
-  [1,4,-107.014222858224],[1,36,-9.15821315805768e13],[5,3,-8625.32011700662],
-  [7,0,-23.5837344740032],[8,24,2.52304969384128e17],[14,16,-3.89718771997719e18],
-  [20,16,-3.33775713645296e22],[22,3,3.56499469636328e10],[24,18,-1.48547544720641e26],
-  [28,8,3.30611514838798e18],[36,24,8.13641294467829e37],
-] as const;
-
-/** R4: enthalpy → saturation pressure for PH boundary detection */
-export function r4EnthalpyToPsat(h: number): number {
-  const mu = h / 2600;
-  let p = 0;
-  for (const [I, J, N] of R4_H_PSAT) {
-    p += N * Math.pow(mu - 1.02, I) * Math.pow(mu - 0.608, J);
+export function r3BackwardPHInitial(p: number, h: number): { rho: number; T: number } {
+  if (h < b3ab_P_to_H(p)) {
+    const T = 760 * evalPoly(R3A_PH_T, -0.240, 0.615, p / 100, h / 2300);
+    const v = 0.0028 * evalPoly(R3A_PH_V, -0.128, 0.727, p / 100, h / 2100);
+    return { rho: 1 / v, T };
   }
-  return 22 * p;
+
+  const T = 860 * evalPoly(R3B_PH_T, -0.298, 0.720, p / 100, h / 2800);
+  const v = 0.0088 * evalPoly(R3B_PH_V, -0.0661, 0.720, p / 100, h / 2800);
+  return { rho: 1 / v, T };
+}
+
+function solveRegion3PH(p: number, h: number, rho0: number, T0: number): BasicProperties {
+  const pScale = Math.max(1, Math.abs(p));
+  const hScale = Math.max(1, Math.abs(h));
+  const [rho, T] = dampedNewton2D(([candidateRho, candidateT]) => {
+    const state = region3ByRhoT(candidateRho, candidateT);
+    const derivatives = helmholtzPropertyDerivatives(state, candidateRho);
+    return {
+      residual: [
+        (state.pressure - p) / pScale,
+        (state.enthalpy - h) / hScale,
+      ],
+      jacobian: [
+        [derivatives.dpDrho / pScale, derivatives.dpDT / pScale],
+        [derivatives.dhDrho / hScale, derivatives.dhDT / hScale],
+      ],
+    };
+  }, [rho0, T0], {
+    isValid: ([candidateRho, candidateT]) => candidateRho > 0 && candidateT > 0,
+  });
+  return region3ByRhoT(rho, T);
 }
 
 // ─── Main PH Solver ────────────────────────────────────────────────────────
@@ -244,7 +259,11 @@ export function solvePH(p: number, h: number): BasicProperties {
   switch (region) {
     case Region.Region1: {
       const T0 = r1BackwardT(p, h);
-      const T = newtonRaphson((T_x) => region1(p, T_x).enthalpy - h, T0);
+      const T = newtonRaphson(
+        (T_x) => region1(p, T_x).enthalpy - h,
+        T0,
+        (T_x) => region1(p, T_x).cp ?? Number.NaN,
+      );
       return validateBackwardState(
         region1(p, T),
         [
@@ -256,7 +275,11 @@ export function solvePH(p: number, h: number): BasicProperties {
     }
     case Region.Region2: {
       const T0 = r2BackwardT(p, h);
-      const T = newtonRaphson((T_x) => region2(p, T_x).enthalpy - h, T0);
+      const T = newtonRaphson(
+        (T_x) => region2(p, T_x).enthalpy - h,
+        T0,
+        (T_x) => region2(p, T_x).cp ?? Number.NaN,
+      );
       return validateBackwardState(
         region2(p, T),
         [
@@ -267,30 +290,11 @@ export function solvePH(p: number, h: number): BasicProperties {
       );
     }
     case Region.Region3: {
-      const hBound = b3ab_P_to_H(p);
       const pressureTolerance = 1e-5 * Math.max(1, Math.abs(p));
-      const enthalpyTolerance = backwardConstraintTolerance('enthalpy', h);
-      let T0: number, v0: number;
-      if (h < hBound) {
-        T0 = 760 * evalPoly(R3A_PH_T, -0.240, 0.615, p / 100, h / 2300);
-        v0 = 0.0028 * evalPoly(R3A_PH_V, -0.128, 0.727, p / 100, h / 2100);
-      } else {
-        T0 = 860 * evalPoly(R3B_PH_T, -0.298, 0.720, p / 100, h / 2800);
-        v0 = 0.0088 * evalPoly(R3B_PH_V, -0.0661, 0.720, p / 100, h / 2800);
-      }
-      const sol = nelderMead(
-        (pair) => {
-          const state = region3ByRhoT(1 / pair[0], pair[1]);
-          return sumNormalizedResiduals([
-            { actual: state.enthalpy, expected: h, tolerance: enthalpyTolerance },
-            { actual: state.pressure, expected: p, tolerance: pressureTolerance },
-          ]);
-        },
-        [v0, T0],
-        { maxIterations: 1000, minErrorDelta: 1e-8, minTolerance: 1e-9 },
-      );
+      const initial = r3BackwardPHInitial(p, h);
+      const state = solveRegion3PH(p, h, initial.rho, initial.T);
       return validateBackwardState(
-        region3ByRhoT(1 / sol.x[0], sol.x[1]),
+        state,
         [
           { label: 'pressure', expected: p, tolerance: pressureTolerance },
           { label: 'enthalpy', expected: h },
@@ -316,7 +320,11 @@ export function solvePH(p: number, h: number): BasicProperties {
       );
     }
     case Region.Region5: {
-      const T = newtonRaphson((T_x) => region5(p, T_x).enthalpy - h, 1500);
+      const T = newtonRaphson(
+        (T_x) => region5(p, T_x).enthalpy - h,
+        1500,
+        (T_x) => region5(p, T_x).cp ?? Number.NaN,
+      );
       return validateBackwardState(
         region5(p, T),
         [

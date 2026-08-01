@@ -14,10 +14,9 @@ import { region5 } from '../regions/region5.js';
 import { assertFiniteNumber } from '../core/input-validation.js';
 import { detectRegionPS } from '../core/region-detector.js';
 import { newtonRaphson } from '../solvers/newton-raphson.js';
-import { nelderMead } from '../solvers/nelder-mead.js';
+import { dampedNewton2D } from '../solvers/damped-newton-2d.js';
 import { validateBackwardState } from './solution-validation.js';
-import { backwardConstraintTolerance } from './tolerances.js';
-import { sumNormalizedResiduals } from './objective-normalization.js';
+import { helmholtzPropertyDerivatives } from './thermodynamic-derivatives.js';
 import {
   mixSaturationState,
   qualityFromSaturationProperty,
@@ -107,9 +106,9 @@ function r2BackwardT(p: number, s: number): number {
     return evalPoly(R2A_PS, 0, 2, p, s / 2);
   }
   if (s >= C.R2_S_CRT) {
-    return evalPoly(R2B_PS, 0, 10, p, s / 0.7853);
+    return evalPoly(R2B_PS, 0, -10, p, -s / 0.7853);
   }
-  return evalPoly(R2C_PS, 0, 2, p, s / 2.9251);
+  return evalPoly(R2C_PS, 0, -2, p, -s / 2.9251);
 }
 
 // ─── Region 3 Backward T(P,S) and v(P,S) ──────────────────────────────────
@@ -168,6 +167,28 @@ const R3B_PS_V_TABLE: CoefficientTable = [
   [2,2,-3.2747778718823],
 ] as const;
 
+function solveRegion3PS(p: number, s: number, rho0: number, T0: number): BasicProperties {
+  const pScale = Math.max(1, Math.abs(p));
+  const sScale = Math.max(1, Math.abs(s));
+  const [rho, T] = dampedNewton2D(([candidateRho, candidateT]) => {
+    const state = region3ByRhoT(candidateRho, candidateT);
+    const derivatives = helmholtzPropertyDerivatives(state, candidateRho);
+    return {
+      residual: [
+        (state.pressure - p) / pScale,
+        (state.entropy - s) / sScale,
+      ],
+      jacobian: [
+        [derivatives.dpDrho / pScale, derivatives.dpDT / pScale],
+        [derivatives.dsDrho / sScale, derivatives.dsDT / sScale],
+      ],
+    };
+  }, [rho0, T0], {
+    isValid: ([candidateRho, candidateT]) => candidateRho > 0 && candidateT > 0,
+  });
+  return region3ByRhoT(rho, T);
+}
+
 // ─── Main PS Solver ────────────────────────────────────────────────────────
 
 /**
@@ -192,7 +213,11 @@ export function solvePS(p: number, s: number): BasicProperties {
   switch (region) {
     case Region.Region1: {
       const T0 = r1BackwardT(p, s);
-      const T = newtonRaphson((T_x) => region1(p, T_x).entropy - s, T0);
+      const T = newtonRaphson(
+        (T_x) => region1(p, T_x).entropy - s,
+        T0,
+        (T_x) => (region1(p, T_x).cp ?? Number.NaN) / T_x,
+      );
       return validateBackwardState(
         region1(p, T),
         [
@@ -204,7 +229,11 @@ export function solvePS(p: number, s: number): BasicProperties {
     }
     case Region.Region2: {
       const T0 = r2BackwardT(p, s);
-      const T = newtonRaphson((T_x) => region2(p, T_x).entropy - s, T0);
+      const T = newtonRaphson(
+        (T_x) => region2(p, T_x).entropy - s,
+        T0,
+        (T_x) => (region2(p, T_x).cp ?? Number.NaN) / T_x,
+      );
       return validateBackwardState(
         region2(p, T),
         [
@@ -216,7 +245,6 @@ export function solvePS(p: number, s: number): BasicProperties {
     }
     case Region.Region3: {
       const pressureTolerance = 1e-5 * Math.max(1, Math.abs(p));
-      const entropyTolerance = backwardConstraintTolerance('entropy', s);
       let T0: number, v0: number;
       if (s <= C.R3_S_CRT) {
         T0 = 760 * evalPoly(R3A_PS_T_TABLE, -0.240, 0.703, p / 100, s / 4.4);
@@ -225,19 +253,9 @@ export function solvePS(p: number, s: number): BasicProperties {
         T0 = 860 * evalPoly(R3B_PS_T_TABLE, -0.760, 0.818, p / 100, s / 5.3);
         v0 = 0.0088 * evalPoly(R3B_PS_V_TABLE, -0.298, 0.816, p / 100, s / 5.3);
       }
-      const sol = nelderMead(
-        (pair) => {
-          const state = region3ByRhoT(1 / pair[0], pair[1]);
-          return sumNormalizedResiduals([
-            { actual: state.entropy, expected: s, tolerance: entropyTolerance },
-            { actual: state.pressure, expected: p, tolerance: pressureTolerance },
-          ]);
-        },
-        [v0, T0],
-        { maxIterations: 1000, minErrorDelta: 1e-8, minTolerance: 1e-9 },
-      );
+      const state = solveRegion3PS(p, s, 1 / v0, T0);
       return validateBackwardState(
-        region3ByRhoT(1 / sol.x[0], sol.x[1]),
+        state,
         [
           { label: 'pressure', expected: p, tolerance: pressureTolerance },
           { label: 'entropy', expected: s },
@@ -263,7 +281,11 @@ export function solvePS(p: number, s: number): BasicProperties {
       );
     }
     case Region.Region5: {
-      const T = newtonRaphson((T_x) => region5(p, T_x).entropy - s, 1500);
+      const T = newtonRaphson(
+        (T_x) => region5(p, T_x).entropy - s,
+        1500,
+        (T_x) => (region5(p, T_x).cp ?? Number.NaN) / T_x,
+      );
       return validateBackwardState(
         region5(p, T),
         [

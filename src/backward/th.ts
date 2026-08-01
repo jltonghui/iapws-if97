@@ -25,8 +25,6 @@ import { assertRegion4StateAllowed } from '../saturation/region4-boundaries.js';
 import { solveFixedTemperaturePressure } from './fixed-temperature-solver.js';
 import { validateBackwardState } from './solution-validation.js';
 
-const extractH = (s: BasicProperties) => s.enthalpy;
-
 /**
  * Solve for full basic thermodynamic state from temperature and enthalpy.
  *
@@ -65,7 +63,7 @@ export function solveTH(T: number, h: number): BasicProperties {
       return validateBackwardState(solveFixedTemperaturePressure(
         region1, T, h,
         saturationPressure(T), C.P_MAX,
-        extractH, 'solveTH',
+        'enthalpy', 'solveTH',
       ), [
         { label: 'temperature', expected: T },
         { label: 'enthalpy', expected: h },
@@ -82,7 +80,7 @@ export function solveTH(T: number, h: number): BasicProperties {
       return validateBackwardState(solveFixedTemperaturePressure(
         region2, T, h,
         C.P_MIN, upper,
-        extractH, 'solveTH',
+        'enthalpy', 'solveTH',
       ), [
         { label: 'temperature', expected: T },
         { label: 'enthalpy', expected: h },
@@ -98,7 +96,7 @@ export function solveTH(T: number, h: number): BasicProperties {
       return validateBackwardState(solveFixedTemperaturePressure(
         solveRegion3PTBasic, T, h,
         lower, C.P_MAX,
-        extractH, 'solveTH',
+        'enthalpy', 'solveTH',
       ), [
         { label: 'temperature', expected: T },
         { label: 'enthalpy', expected: h },
@@ -128,7 +126,7 @@ export function solveTH(T: number, h: number): BasicProperties {
       return validateBackwardState(solveFixedTemperaturePressure(
         region5, T, h,
         C.P_MIN, C.R5_P_MAX,
-        extractH, 'solveTH',
+        'enthalpy', 'solveTH',
       ), [
         { label: 'temperature', expected: T },
         { label: 'enthalpy', expected: h },

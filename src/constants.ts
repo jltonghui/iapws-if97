@@ -43,9 +43,6 @@ export const REGION4_CRITICAL_HS_TOLERANCE = 1e-6;
 /** Residual tolerance for Region 4 h-s temperature inversion */
 export const REGION4_HS_RESIDUAL_TOLERANCE = 1e-10;
 
-/** Scan resolution used when bracketing Region 4 h-s temperature roots */
-export const REGION4_HS_BRACKET_SEGMENTS = 256;
-
 /** Critical density [kg/m³] */
 export const RHOc = 322;
 
@@ -113,9 +110,6 @@ export const B23_T_MAX = 863.15;
 
 // ─── Region 3 Boundaries ───────────────────────────────────────────────────
 
-/** Region 3 minimum temperature [K] */
-export const R3_T_MIN = 623.15;
-
 /** Region 3 critical entropy [kJ/(kg·K)] */
 export const R3_S_CRT = 4.41202148223476;
 
@@ -133,12 +127,11 @@ export const R5_P_MAX = 50;
 /** Region 5 maximum temperature [K] */
 export const R5_T_MAX = 2273.15;
 
-// ─── B23 Curve Extrema (Entropy / Enthalpy) ────────────────────────────────
+// ─── B23 Curve Extrema (Entropy) ───────────────────────────────────────────
 //
 // These are the GLOBAL EXTREMA along the B23 boundary curve, NOT values at
-// the curve endpoints. Entropy has a minimum at T ≈ 777 K and a maximum at
-// T ≈ 644 K. Enthalpy is monotonic: min at the low-T endpoint (623.15 K),
-// max at the high-T endpoint (863.15 K).
+// the curve endpoints: entropy has a minimum at T ≈ 777 K and a maximum at
+// T ≈ 644 K.
 //
 // Ref: Computed from Region 2 properties evaluated along B23(T) for
 //      T ∈ [623.15, 863.15] K.
@@ -148,9 +141,3 @@ export const B23_S_CURVE_MIN = 5.048096828;
 
 /** Maximum entropy along the B23 curve [kJ/(kg·K)], at T ≈ 644 K */
 export const B23_S_CURVE_MAX = 5.260578707;
-
-/** Minimum enthalpy along the B23 curve [kJ/kg], at T = 623.15 K (currently unused) */
-export const B23_H_CURVE_MIN = 2563.592004;
-
-/** Maximum enthalpy along the B23 curve [kJ/kg], at T = 863.15 K (currently unused) */
-export const B23_H_CURVE_MAX = 2812.942061;

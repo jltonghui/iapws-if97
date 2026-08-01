@@ -16,6 +16,8 @@ export interface BracketedNewtonOptions {
   maxIterations?: number;
   /** Relative step size for central-difference derivative (default 1e-6) */
   derivativeStep?: number;
+  /** Optional analytical derivative. */
+  derivative?: (x: number) => number;
 }
 
 /**
@@ -39,9 +41,9 @@ function numericalDerivative(
 /**
  * Find a root of f(x) = 0 within the bracket [lower, upper].
  *
- * Each iteration attempts a Newton step using a central-difference derivative.
- * If the Newton candidate falls outside the current bracket or the derivative
- * is unavailable, a bisection step is used instead.
+ * Each iteration attempts a Newton step using the supplied analytical derivative,
+ * or a central difference when none is supplied. If the Newton candidate falls
+ * outside the current bracket, a bisection step is used instead.
  *
  * @param f            - Continuous function whose root is sought
  * @param lower        - Lower bound of the bracket
@@ -100,9 +102,9 @@ export function bracketedNewton(
     }
 
     const step = Math.min(derivativeStep * Math.max(1, Math.abs(x)), (b - a) / 4);
-    const derivative = step > 0
+    const derivative = options?.derivative?.(x) ?? (step > 0
       ? numericalDerivative(f, x, a, b, step)
-      : null;
+      : null);
 
     const newtonCandidate = derivative === null || !Number.isFinite(derivative) || derivative === 0
       ? NaN

@@ -7,10 +7,14 @@ import { boundary23_P_to_T, boundary23_T_to_P } from '../regions/boundaries.js';
 import { region1 } from '../regions/region1.js';
 import { region2 } from '../regions/region2.js';
 import { region5 } from '../regions/region5.js';
-import { saturationEndpointsAtPressure, saturationEndpointsAtTemperature } from '../saturation/common.js';
+import {
+  saturationEndpointsAtPressure,
+  saturationEndpointsAtTemperature,
+  type SaturationEndpoints,
+} from '../saturation/common.js';
 import { tryRegion4HSState } from '../saturation/region4-hs.js';
 import type { BasicProperties, CoefficientTable } from '../types.js';
-import { Region } from '../types.js';
+import { IF97Error, Region } from '../types.js';
 import { bracketedNewton } from '../solvers/bracketed-newton.js';
 import { solveRegion3PTBasic } from './region3-pt.js';
 
@@ -405,13 +409,23 @@ function h1Sat(s: number): number {
  * Region 1 enthalpy maximum would admit impossible h-s pairs.
  */
 function h1UpperBoundAtPmax(s: number): number {
+  let cachedTemperature = Number.NaN;
+  let cachedState: BasicProperties | null = null;
+  const stateAt = (T: number): BasicProperties => {
+    if (T !== cachedTemperature || cachedState === null) {
+      cachedTemperature = T;
+      cachedState = region1(C.P_MAX, T);
+    }
+    return cachedState;
+  };
   const temperature = bracketedNewton(
-    (T) => region1(C.P_MAX, T).entropy - s,
+    (T) => stateAt(T).entropy - s,
     C.T_MIN,
     C.R2_T_MIN,
     350,
+    { derivative: (T) => (stateAt(T).cp ?? Number.NaN) / T },
   );
-  return region1(C.P_MAX, temperature).enthalpy;
+  return stateAt(temperature).enthalpy;
 }
 
 /**
@@ -551,6 +565,219 @@ function backward2cPhs(h: number, s: number): number {
   return 100 * P * P * P * P;
 }
 
+const HS_R1_PMAX_623 = region1(C.P_MAX, C.R2_T_MIN);
+const HS_R1_B23_MIN = region1(C.B23_P_MIN, C.R2_T_MIN);
+const HS_R2_PMAX_TMAX = region2(C.P_MAX, C.R2_T_MAX);
+const HS_R2_PMIN_TMAX = region2(C.P_MIN, C.R2_T_MAX);
+const HS_R2_B23_MIN = region2(C.B23_P_MIN, C.R2_T_MIN);
+const HS_R2_B23_MAX = region2(C.P_MAX, C.B23_T_MAX);
+const HS_R2_R5_PMAX = region2(C.R5_P_MAX, C.R2_T_MAX);
+const HS_R5_LOWER = region5(C.R5_P_MAX, C.R5_T_MIN);
+const HS_R5_PMIN_TMIN = region5(C.P_MIN, C.R5_T_MIN);
+const HS_R5_UPPER = region5(C.P_MIN, C.R5_T_MAX);
+const HS_TRIPLE_POINT_ENDPOINTS = saturationEndpointsAtTemperature(C.Tt);
+const HS_TRIPLE_LIQUID = HS_TRIPLE_POINT_ENDPOINTS.liquid;
+const HS_TRIPLE_VAPOR = HS_TRIPLE_POINT_ENDPOINTS.vapor;
+const HS_S13 = HS_R1_PMAX_623.entropy;
+const HS_S13S = HS_R1_B23_MIN.entropy;
+const HS_S_TP_MAX = HS_R2_PMAX_TMAX.entropy;
+const HS_S2AB = region2(C.R2_P_CRT, C.R2_T_MAX).entropy;
+// Covers the 0.0073 kJ/kg maximum boundary-equation error reported by IAPWS.
+const HS_SATURATION_BOUNDARY_CONFIRMATION_BAND = 0.01;
+const HS_SATURATION_BOUNDARY_ENTHALPY_TOLERANCE = 1e-8;
+const HS_SATURATION_INVERSION_UPPER_T = C.Tc - C.REGION4_SUBCRITICAL_TEMPERATURE_MARGIN;
+
+function hSatLow(s: number): number {
+  return HS_TRIPLE_LIQUID.enthalpy +
+    (s - HS_TRIPLE_LIQUID.entropy) /
+    (HS_TRIPLE_VAPOR.entropy - HS_TRIPLE_LIQUID.entropy) *
+    (HS_TRIPLE_VAPOR.enthalpy - HS_TRIPLE_LIQUID.enthalpy);
+}
+
+type SaturationPhase = 'liquid' | 'vapor';
+
+function phaseState(endpoints: SaturationEndpoints, phase: SaturationPhase): BasicProperties {
+  return phase === 'liquid' ? endpoints.liquid : endpoints.vapor;
+}
+
+/**
+ * Invert one saturation endpoint's monotone entropy curve without scanning.
+ * The Clapeyron relation supplies dp_sat/dT, and the Gibbs Maxwell relation
+ * supplies the endpoint derivative along that curve.
+ */
+function saturationBoundaryEnthalpyAtEntropy(
+  s: number,
+  phase: SaturationPhase,
+): number | null {
+  let lower = C.Tt;
+  let upper = HS_SATURATION_INVERSION_UPPER_T;
+  const tripleEntropy = phaseState(HS_TRIPLE_POINT_ENDPOINTS, phase).entropy;
+  const criticalEntropy = C.R3_S_CRT;
+  const fraction = phase === 'liquid'
+    ? (s - tripleEntropy) / (criticalEntropy - tripleEntropy)
+    : (tripleEntropy - s) / (tripleEntropy - criticalEntropy);
+  const boundedFraction = Math.max(0, Math.min(1, fraction));
+  let temperature = lower + boundedFraction * (upper - lower);
+
+  for (let iteration = 0; iteration < 12; iteration += 1) {
+    const endpoints = saturationEndpointsAtTemperature(temperature);
+    const state = phaseState(endpoints, phase);
+    const residual = state.entropy - s;
+    if (Math.abs(residual) <= 1e-12 * Math.max(1, Math.abs(s))) {
+      return state.enthalpy;
+    }
+
+    const residualIncreasesWithTemperature = phase === 'liquid';
+    if ((residual < 0) === residualIncreasesWithTemperature) lower = temperature;
+    else upper = temperature;
+    if (upper - lower <= 10 * C.REGION4_TEMPERATURE_TOLERANCE) {
+      return state.enthalpy;
+    }
+
+    const entropySpan = endpoints.vapor.entropy - endpoints.liquid.entropy;
+    const volumeSpan = endpoints.vapor.specificVolume - endpoints.liquid.specificVolume;
+    const dpSatDT = entropySpan / (1000 * volumeSpan);
+    const cp = state.cp;
+    const alpha = state.isobaricExpansion;
+    const derivative = cp === null || alpha === null
+      ? Number.NaN
+      : cp / temperature - 1000 * state.specificVolume * alpha * dpSatDT;
+    const candidate = temperature - residual / derivative;
+    temperature = Number.isFinite(candidate) && candidate > lower && candidate < upper
+      ? candidate
+      : (lower + upper) / 2;
+  }
+
+  return null;
+}
+
+/** Replace the supplementary polynomial only in its narrow error band. */
+function refinedSaturationBoundaryEnthalpy(
+  h: number,
+  s: number,
+  approximateBoundaryH: number,
+): number {
+  if (Math.abs(h - approximateBoundaryH) > HS_SATURATION_BOUNDARY_CONFIRMATION_BAND) {
+    return approximateBoundaryH;
+  }
+
+  const phase: SaturationPhase = s <= C.R3_S_CRT ? 'liquid' : 'vapor';
+  let exactBoundaryH: number | null;
+  try {
+    exactBoundaryH = saturationBoundaryEnthalpyAtEntropy(s, phase);
+  } catch (error) {
+    if (error instanceof IF97Error) return approximateBoundaryH;
+    throw error;
+  }
+  return exactBoundaryH === null
+    ? approximateBoundaryH
+    : exactBoundaryH + HS_SATURATION_BOUNDARY_ENTHALPY_TOLERANCE;
+}
+
+function confirmedRegion4BoundaryState(
+  h: number,
+  s: number,
+  approximateBoundaryH: number,
+): boolean | null {
+  if (Math.abs(h - approximateBoundaryH) > HS_SATURATION_BOUNDARY_CONFIRMATION_BAND) {
+    return null;
+  }
+  try {
+    return tryRegion4HSState(h, s) !== null;
+  } catch (error) {
+    if (error instanceof IF97Error) return false;
+    throw error;
+  }
+}
+
+function r2R5BoundaryEnthalpy(
+  s: number,
+  lowEntropy: number,
+  highEntropy: number,
+  stateAtPressure: (p: number) => BasicProperties,
+): number | null {
+  if (s < lowEntropy || s > highEntropy) return null;
+
+  let lower = C.P_MIN;
+  let upper = C.R5_P_MAX;
+  const fraction = (highEntropy - s) / (highEntropy - lowEntropy);
+  let p = Math.exp(Math.log(lower) + fraction * (Math.log(upper) - Math.log(lower)));
+
+  for (let iteration = 0; iteration < 12; iteration += 1) {
+    const state = stateAtPressure(p);
+    const residual = state.entropy - s;
+    if (Math.abs(residual) <= 1e-12 * Math.max(1, Math.abs(s))) {
+      return state.enthalpy;
+    }
+
+    if (residual > 0) lower = p;
+    else upper = p;
+
+    const alpha = state.isobaricExpansion;
+    const derivative = alpha === null ? Number.NaN : -1000 * state.specificVolume * alpha;
+    const candidate = p - residual / derivative;
+    p = Number.isFinite(candidate) && candidate > lower && candidate < upper
+      ? candidate
+      : (lower + upper) / 2;
+  }
+
+  return stateAtPressure(p).enthalpy;
+}
+
+function classifyRegion5HS(h: number, s: number): Region.Region5 | -1 | null {
+  if (!(HS_R5_LOWER.entropy < s && s <= HS_R5_UPPER.entropy &&
+        HS_R5_LOWER.enthalpy < h && h <= HS_R5_UPPER.enthalpy)) {
+    return null;
+  }
+
+  const region2BoundaryH = r2R5BoundaryEnthalpy(
+    s,
+    HS_R2_R5_PMAX.entropy,
+    HS_R2_PMIN_TMAX.entropy,
+    (p) => region2(p, C.R2_T_MAX),
+  );
+  const region5BoundaryH = r2R5BoundaryEnthalpy(
+    s,
+    HS_R5_LOWER.entropy,
+    HS_R5_PMIN_TMIN.entropy,
+    (p) => region5(p, C.R5_T_MIN),
+  );
+
+  if (region2BoundaryH === null) {
+    return region5BoundaryH === null || h > region5BoundaryH
+      ? Region.Region5
+      : null;
+  }
+  if (region5BoundaryH === null) {
+    return h > region2BoundaryH ? Region.Region5 : null;
+  }
+
+  const tolerance = 1e-10 * Math.max(
+    1,
+    Math.abs(h),
+    Math.abs(region2BoundaryH),
+    Math.abs(region5BoundaryH),
+  );
+  if (region5BoundaryH > region2BoundaryH + tolerance) {
+    if (h > region5BoundaryH + tolerance) return Region.Region5;
+    if (h > region2BoundaryH + tolerance) return -1;
+    return null;
+  }
+
+  if (region2BoundaryH > region5BoundaryH + tolerance) {
+    if (h > region2BoundaryH + tolerance) return Region.Region5;
+    if (h <= region5BoundaryH + tolerance) return null;
+
+    // The independently fitted Region 2 and 5 equations overlap slightly at
+    // 1073.15 K. H-S is non-unique there; choose the branch nearest its seam.
+    return h <= (region2BoundaryH + region5BoundaryH) / 2
+      ? Region.Region5
+      : null;
+  }
+
+  return h > region2BoundaryH + tolerance ? Region.Region5 : null;
+}
+
 /**
  * Detect the IAPWS-IF97 region for given H and S.
  * Implements the zone-based detection from the IAPWS supplementary release.
@@ -560,92 +787,73 @@ function backward2cPhs(h: number, s: number): number {
  * @returns Region number (1–5) or -1 if out of range
  */
 export function detectRegionHS(h: number, s: number): Region | -1 {
-  // Pre-compute boundary reference points
-  const s13 = region1(C.P_MAX, C.R2_T_MIN).entropy;
-  const s13s = region1(C.B23_P_MIN, C.R2_T_MIN).entropy;
-  const sTPmax = region2(C.P_MAX, C.R2_T_MAX).entropy;
-  const s2ab = region2(C.R2_P_CRT, C.R2_T_MAX).entropy;
-
-  const region4State = tryRegion4HSState(h, s);
-  if (region4State !== null) {
+  if (s >= HS_TRIPLE_LIQUID.entropy && s <= HS_TRIPLE_VAPOR.entropy &&
+      isClose(h, hSatLow(s))) {
     return Region.Region4;
   }
 
-  const triplePointEndpoints = saturationEndpointsAtTemperature(C.Tt);
-  const _sL = triplePointEndpoints.liquid;
-  const h4l = _sL.enthalpy;
-  const s4l = _sL.entropy;
-
-  const _sV = triplePointEndpoints.vapor;
-  const h4v = _sV.enthalpy;
-  const s4v = _sV.entropy;
-
-  const _Pmax = region2(C.P_MIN, C.R2_T_MAX);
-  const smax = _Pmax.entropy;
-
-  // Check Region 5 first (before R2 overlap zones)
-  const r5lo = region5(C.R5_P_MAX, C.R5_T_MIN);
-  const r5hi = region5(C.P_MIN, C.R5_T_MAX);
-  if (r5lo.entropy < s && s <= r5hi.entropy &&
-      r5lo.enthalpy < h && h <= r5hi.enthalpy) {
-    return Region.Region5;
-  }
-
-  // Helper: linear interpolation for saturation lower bound
-  const hSatLow = (sVal: number): number =>
-    h4l + (sVal - s4l) / (s4v - s4l) * (h4v - h4l);
+  const highTemperatureRegion = classifyRegion5HS(h, s);
+  if (highTemperatureRegion !== null) return highTemperatureRegion;
 
   // Zone 1: smin <= s <= s13 (Region 1 / Region 4)
-  if (s >= _sL.entropy && s <= s13) {
+  if (s >= HS_TRIPLE_LIQUID.entropy && s <= HS_S13) {
     const hmin = hSatLow(s);
-    const hs = h1Sat(s);
+    const hs = refinedSaturationBoundaryEnthalpy(h, s, h1Sat(s));
     const hmax = h1UpperBoundAtPmax(s);
 
-    if (h >= hmin && h < hs) return Region.Region4;
+    if (h >= hmin && h <= hs) return Region.Region4;
     if (h >= hs && h <= hmax) return Region.Region1;
   }
 
   // Zone 2: s13 < s <= s13s (Region 1 / Region 3 / Region 4)
-  else if (s > s13 && s <= s13s) {
+  else if (s > HS_S13 && s <= HS_S13S) {
     const hmin = hSatLow(s);
-    const hs = h1Sat(s);
+    const hs = refinedSaturationBoundaryEnthalpy(h, s, h1Sat(s));
     const h13 = h13Boundary(s);
-    const hmax = region1(C.P_MAX, C.R2_T_MIN).enthalpy * 1.1; // generous upper bound
+    const hmax = 2800; // Region 3 upper bound
 
-    if (h >= hmin && h < hs) return Region.Region4;
+    if (h >= hmin && h <= hs) return Region.Region4;
     if (h >= hs && h < h13) return Region.Region1;
     if (h >= h13 && h <= hmax) return Region.Region3;
   }
 
   // Zone 3: s13s < s <= R3_CRT_S (Region 3 / Region 4)
-  else if (s > s13s && s <= C.R3_S_CRT) {
+  else if (s > HS_S13S && s <= C.R3_S_CRT) {
     const hmin = hSatLow(s);
-    const hs = h3aSat(s);
     const hmax = 2800; // generous upper bound for R3
+    const hs = h3aSat(s);
+    const confirmedRegion4 = confirmedRegion4BoundaryState(h, s, hs);
 
-    if (h >= hmin && h < hs) return Region.Region4;
+    if (confirmedRegion4 === true) return Region.Region4;
+    if (confirmedRegion4 === false && h >= hmin && h <= hmax) return Region.Region3;
+
+    if (h >= hmin && h <= hs) return Region.Region4;
     if (h >= hs && h <= hmax) return Region.Region3;
   }
 
   // Zone 4: R3_CRT_S < s < B23_S_CURVE_MIN (Region 3 / Region 4)
   else if (s > C.R3_S_CRT && s < C.B23_S_CURVE_MIN) {
     const hmin = hSatLow(s);
-    const hs = h2c3bSat(s);
     const hmax = 2800; // generous upper bound for R3
+    const hs = h2c3bSat(s);
+    const confirmedRegion4 = confirmedRegion4BoundaryState(h, s, hs);
 
-    if (h >= hmin && h < hs) return Region.Region4;
+    if (confirmedRegion4 === true) return Region.Region4;
+    if (confirmedRegion4 === false && h >= hmin && h <= hmax) return Region.Region3;
+
+    if (h >= hmin && h <= hs) return Region.Region4;
     if (h >= hs && h <= hmax) return Region.Region3;
   }
 
   // Zone 5: B23_S_CURVE_MIN <= s < B23_S_CURVE_MAX (Region 2 / Region 3 / Region 4)
   else if (s >= C.B23_S_CURVE_MIN && s < C.B23_S_CURVE_MAX) {
     const hmin = hSatLow(s);
-    const hs = h2c3bSat(s);
-    const h23max = region2(C.P_MAX, C.B23_T_MAX).enthalpy;
-    const h23min = region2(C.B23_P_MIN, C.R2_T_MIN).enthalpy;
-    const hmax = region2(C.P_MAX, C.R2_T_MAX).enthalpy;
+    const hs = refinedSaturationBoundaryEnthalpy(h, s, h2c3bSat(s));
+    const h23max = HS_R2_B23_MAX.enthalpy;
+    const h23min = HS_R2_B23_MIN.enthalpy;
+    const hmax = HS_R2_PMAX_TMAX.enthalpy;
 
-    if (hmin <= h && h < hs) return Region.Region4;
+    if (hmin <= h && h <= hs) return Region.Region4;
     if (hs <= h && h < h23min) return Region.Region3;
     if (h23min <= h && h < h23max) {
       // Discriminate R2 vs R3 using B23 boundary
@@ -661,47 +869,47 @@ export function detectRegionHS(h: number, s: number): Region | -1 {
   // Zone 6: B23_S_CURVE_MAX <= s < R2_S_CRT (Region 2 / Region 4)
   else if (s >= C.B23_S_CURVE_MAX && s < C.R2_S_CRT) {
     const hmin = hSatLow(s);
-    const hs = h2c3bSat(s);
-    const hmax = region2(C.P_MAX, C.R2_T_MAX).enthalpy;
+    const hs = refinedSaturationBoundaryEnthalpy(h, s, h2c3bSat(s));
+    const hmax = HS_R2_PMAX_TMAX.enthalpy;
 
-    if (hmin <= h && h < hs) return Region.Region4;
+    if (hmin <= h && h <= hs) return Region.Region4;
     if (hs <= h && h <= hmax) return Region.Region2;
   }
 
   // Zone 7: R2_S_CRT <= s < sTPmax (Region 2 / Region 4, use h2abSat)
-  else if (s >= C.R2_S_CRT && s < sTPmax) {
+  else if (s >= C.R2_S_CRT && s < HS_S_TP_MAX) {
     const hmin = hSatLow(s);
-    const hs = h2abSat(s);
-    const hmax = region2(C.P_MAX, C.R2_T_MAX).enthalpy;
+    const hs = refinedSaturationBoundaryEnthalpy(h, s, h2abSat(s));
+    const hmax = HS_R2_PMAX_TMAX.enthalpy;
 
-    if (hmin <= h && h < hs) return Region.Region4;
+    if (hmin <= h && h <= hs) return Region.Region4;
     if (hs <= h && h <= hmax) return Region.Region2;
   }
 
   // Zone 8: sTPmax <= s < s2ab (Region 2 / Region 4)
-  else if (s >= sTPmax && s < s2ab) {
+  else if (s >= HS_S_TP_MAX && s < HS_S2AB) {
     const hmin = hSatLow(s);
-    const hs = h2abSat(s);
-    const hmax = region2(C.P_MIN, C.R2_T_MAX).enthalpy;
+    const hs = refinedSaturationBoundaryEnthalpy(h, s, h2abSat(s));
+    const hmax = HS_R2_PMIN_TMAX.enthalpy;
 
-    if (hmin <= h && h < hs) return Region.Region4;
+    if (hmin <= h && h <= hs) return Region.Region4;
     if (hs <= h && h <= hmax) return Region.Region2;
   }
 
   // Zone 9: s2ab <= s < s4v (Region 2 / Region 4)
-  else if (s >= s2ab && s < s4v) {
+  else if (s >= HS_S2AB && s < HS_TRIPLE_VAPOR.entropy) {
     const hmin = hSatLow(s);
-    const hs = h2abSat(s);
-    const hmax = region2(C.P_MIN, C.R2_T_MAX).enthalpy;
+    const hs = refinedSaturationBoundaryEnthalpy(h, s, h2abSat(s));
+    const hmax = HS_R2_PMIN_TMAX.enthalpy;
 
-    if (hmin <= h && h < hs) return Region.Region4;
+    if (hmin <= h && h <= hs) return Region.Region4;
     if (hs <= h && h <= hmax) return Region.Region2;
   }
 
   // Zone 10: s4v <= s <= smax (Region 2 only, superheated low-P)
-  else if (s >= s4v && s <= smax) {
-    const hmin = h4v;
-    const hmax = region2(C.P_MIN, C.R2_T_MAX).enthalpy;
+  else if (s >= HS_TRIPLE_VAPOR.entropy && s <= HS_R2_PMIN_TMAX.entropy) {
+    const hmin = HS_TRIPLE_VAPOR.enthalpy;
+    const hmax = HS_R2_PMIN_TMAX.enthalpy;
 
     if (hmin <= h && h <= hmax) return Region.Region2;
   }

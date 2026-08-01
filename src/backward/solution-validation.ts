@@ -34,6 +34,42 @@ function propertyValue(state: BasicProperties, label: BackwardConstraint['label'
   }
 }
 
+function boundaryTolerance(value: number, boundary: number): number {
+  return 1e-9 * Math.max(1, Math.abs(value), Math.abs(boundary));
+}
+
+function snapUpFromBelow(value: number, boundary: number): number {
+  return value < boundary && boundary - value <= boundaryTolerance(value, boundary)
+    ? boundary
+    : value;
+}
+
+function snapDownFromAbove(value: number, boundary: number): number {
+  return value > boundary && value - boundary <= boundaryTolerance(value, boundary)
+    ? boundary
+    : value;
+}
+
+function normalizeComputedPT(state: BasicProperties): BasicProperties {
+  let pressure = snapUpFromBelow(state.pressure, C.P_MIN);
+  pressure = snapDownFromAbove(
+    pressure,
+    state.region === Region.Region5 ? C.R5_P_MAX : C.P_MAX,
+  );
+
+  let temperature = snapUpFromBelow(state.temperature, C.T_MIN);
+  if (state.region === Region.Region1) {
+    temperature = snapDownFromAbove(temperature, C.R2_T_MIN);
+  } else if (state.region === Region.Region2) {
+    temperature = snapDownFromAbove(temperature, C.R2_T_MAX);
+  }
+  temperature = snapDownFromAbove(temperature, C.T_MAX);
+
+  return pressure === state.pressure && temperature === state.temperature
+    ? state
+    : { ...state, pressure, temperature };
+}
+
 function validateBasicEnvelope(state: BasicProperties, solverName: string): void {
   if (!Number.isFinite(state.pressure) || !Number.isFinite(state.temperature) ||
       !Number.isFinite(state.specificVolume) || state.specificVolume <= 0) {
@@ -123,8 +159,9 @@ export function validateBackwardState(
   constraints: readonly BackwardConstraint[],
   options: BackwardValidationOptions,
 ): BasicProperties {
-  validateBasicEnvelope(state, options.solverName);
-  validateRegionConsistency(state, options.solverName, options.expectedRegion);
-  validateConstraints(state, constraints, options.solverName);
-  return withExactConstraints(state, constraints);
+  const normalized = normalizeComputedPT(state);
+  validateBasicEnvelope(normalized, options.solverName);
+  validateRegionConsistency(normalized, options.solverName, options.expectedRegion);
+  validateConstraints(normalized, constraints, options.solverName);
+  return withExactConstraints(normalized, constraints);
 }

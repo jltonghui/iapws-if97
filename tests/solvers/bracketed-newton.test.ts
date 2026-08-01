@@ -14,6 +14,19 @@ describe('bracketedNewton', () => {
     expectDigitsClose(root, 2, 9);
   });
 
+  it('uses an analytical derivative when provided', () => {
+    let derivativeCalls = 0;
+    const root = bracketedNewton((x) => x * x - 4, 0, 10, 3, {
+      derivative: (x) => {
+        derivativeCalls += 1;
+        return 2 * x;
+      },
+    });
+
+    expectDigitsClose(root, 2, 9);
+    expect(derivativeCalls).toBeGreaterThan(0);
+  });
+
   it('finds root when initial guess is outside bracket (clamped to midpoint)', () => {
     const root = bracketedNewton((x) => x - 5, 0, 10, -100);
     expectDigitsClose(root, 5, 9);

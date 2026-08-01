@@ -19,11 +19,11 @@ export function clampRegion4TemperatureBelowCritical(T: number): number {
   return Math.max(C.Tt, Math.min(T, C.Tc - C.REGION4_SUBCRITICAL_TEMPERATURE_MARGIN));
 }
 
-export function isRegion4CriticalPressure(p: number): boolean {
+function isRegion4CriticalPressure(p: number): boolean {
   return normalizeRegion4Pressure(p) === C.Pc;
 }
 
-export function isRegion4CriticalTemperature(T: number): boolean {
+function isRegion4CriticalTemperature(T: number): boolean {
   return normalizeRegion4Temperature(T) === C.Tc;
 }
 
@@ -63,11 +63,11 @@ export function assertRegion4StateAllowed(
   }
 }
 
-export function isCriticalRegion4Enthalpy(h: number): boolean {
+function isCriticalRegion4Enthalpy(h: number): boolean {
   return Math.abs(h - C.R3_H_CRT) <= C.REGION4_CRITICAL_HS_TOLERANCE;
 }
 
-export function isCriticalRegion4Entropy(s: number): boolean {
+function isCriticalRegion4Entropy(s: number): boolean {
   return Math.abs(s - C.R3_S_CRT) <= C.REGION4_CRITICAL_HS_TOLERANCE;
 }
 

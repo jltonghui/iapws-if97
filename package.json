@@ -16,33 +16,40 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "default": "./dist/index.js"
     },
     "./transport": {
+      "types": "./dist/transport.d.ts",
       "import": "./dist/transport.js",
-      "types": "./dist/transport.d.ts"
+      "default": "./dist/transport.js"
     },
     "./regions": {
+      "types": "./dist/regions.d.ts",
       "import": "./dist/regions.js",
-      "types": "./dist/regions.d.ts"
+      "default": "./dist/regions.js"
     },
     "./saturation": {
+      "types": "./dist/saturation.d.ts",
       "import": "./dist/saturation.js",
-      "types": "./dist/saturation.d.ts"
+      "default": "./dist/saturation.js"
     },
     "./boundaries": {
+      "types": "./dist/boundaries.d.ts",
       "import": "./dist/boundaries.js",
-      "types": "./dist/boundaries.d.ts"
+      "default": "./dist/boundaries.js"
     },
     "./detect": {
+      "types": "./dist/detect.d.ts",
       "import": "./dist/detect.js",
-      "types": "./dist/detect.d.ts"
+      "default": "./dist/detect.js"
     },
     "./package.json": "./package.json"
   },
   "files": [
-    "dist",
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
     "CHANGELOG.md",
     "LICENSE",
     "README.md"
@@ -64,7 +71,7 @@
     "test:standards": "vitest run tests/standards-asme tests/standards-cn",
     "test:standards:asme": "vitest run tests/standards-asme",
     "test:standards:cn": "vitest run tests/standards-cn",
-    "prepack": "npm run build && npm test",
+    "prepack": "npm run test:package && npm test",
     "prepublishOnly": "npm run build && npm test"
   },
   "devDependencies": {

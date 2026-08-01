@@ -62,6 +62,8 @@ describe('Region 4 backward T(h,s)', () => {
     { T: 646, x: 1e-6 },
     { T: 646, x: 1 - 1e-6 },
     { T: 646, x: 1 },
+    { T: Tc - 0.01, x: 1e-7 },
+    { T: Tc - 0.01, x: 1 - 1e-7 },
   ])('preserves endpoint or interior quality x=$x at T=$T K', ({ T, x }) => {
     const forward = solveTx(T, x);
     const backward = solveHS(forward.enthalpy, forward.entropy);

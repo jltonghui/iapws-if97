@@ -53,4 +53,10 @@ describe('H-S classification next to the saturation boundary', () => {
       }
     },
   );
+
+  it('keeps a platform-rounded near-critical saturation input in Region 4', () => {
+    const backward = solveHS(2088.9078193652176, 4.4141248142462741);
+
+    expect(backward.region).toBe(Region.Region4);
+  });
 });

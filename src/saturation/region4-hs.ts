@@ -230,12 +230,16 @@ function tryRegion4HSGibbsState(h: number, s: number): BasicProperties | null {
     return null;
   }
 
+  const initialTemperature = C.Tc - 1e-4;
   try {
+    const initialState = finalizeRegion4HSState(h, s, initialTemperature);
+    if (initialState !== null) return initialState;
+
     const root = bracketedNewton(
       (T) => evaluate(T).residual,
       C.Tc - C.CRITICAL_T_EXCLUSION_BAND,
       REGION4_HS_NEAR_CRITICAL_UPPER,
-      C.Tc - 1e-4,
+      initialTemperature,
       {
         tolerance: C.REGION4_HS_RESIDUAL_TOLERANCE,
         derivative: (T) => evaluate(T).derivative,
@@ -297,7 +301,10 @@ function tryRegion4HSNewtonState(h: number, s: number): BasicProperties | null {
       });
 
       if (isAdmissibleQuality(quality)) {
-        const state = finalizeRegion4HSState(h, s, temperature);
+        const stableTemperature = Math.round(
+          temperature / C.REGION4_TEMPERATURE_TOLERANCE,
+        ) * C.REGION4_TEMPERATURE_TOLERANCE;
+        const state = finalizeRegion4HSState(h, s, stableTemperature);
         if (state !== null) return state;
       }
     } catch (error) {

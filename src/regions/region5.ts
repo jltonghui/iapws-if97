@@ -24,7 +24,7 @@ const IDEAL_COEFFICIENTS: readonly (readonly [number, number])[] = [
 
 // ─── Residual Part Coefficients (Table 38) ──────────────────────────────────
 
-const RESIDUAL_COEFFICIENTS: CoefficientTable = [
+export const RESIDUAL_COEFFICIENTS: CoefficientTable = [
   [1, 1, 1.5736404855259e-3],
   [1, 2, 9.0153761673944e-4],
   [1, 3, -5.0270077677648e-3],

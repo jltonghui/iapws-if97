@@ -10,6 +10,7 @@ import { region1 } from '../../src/regions/region1.js';
 describe('public API surface', () => {
   it('keeps the root export focused on main solver APIs', () => {
     expect(Object.keys(root).sort()).toEqual([
+      'AmbiguousStateError',
       'ConvergenceError',
       'IF97Error',
       'OutOfRangeError',

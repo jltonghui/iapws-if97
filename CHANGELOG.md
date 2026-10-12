@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Fixed
+
+- Search all valid temperature–enthalpy branches, including non-monotonic isotherms and subcritical Region 3 vapor states.
+- `solveTH`, the unified `TH` mode, and `detectRegionTH` now throw the exported `AmbiguousStateError` when multiple physical states match. This changes calls that previously selected a branch silently or reported no valid state. The error extends `IF97Error`; unique solutions and shared saturation endpoints remain supported.
+
 ## 2.2.0
 
 ### Fixed

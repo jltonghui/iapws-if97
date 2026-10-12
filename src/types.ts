@@ -170,6 +170,14 @@ export class IF97Error extends Error {
   }
 }
 
+/** Thrown when temperature and enthalpy identify multiple physical states. */
+export class AmbiguousStateError extends IF97Error {
+  constructor(T: number, h: number) {
+    super(`Ambiguous T-h state for T=${T} K, h=${h} kJ/kg: multiple physical states exist; supply an independent state constraint, for example using PT, PH, or Tx`);
+    this.name = 'AmbiguousStateError';
+  }
+}
+
 /** Thrown when input values are outside IAPWS-IF97 valid ranges */
 export class OutOfRangeError extends IF97Error {
   constructor(

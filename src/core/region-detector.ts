@@ -2,6 +2,7 @@
  * Region detection for various input modes.
  */
 import * as C from '../constants.js';
+import { uniqueTHState } from '../backward/th-candidates.js';
 import { saturationTemperature } from '../regions/region4.js';
 import { boundary23_P_to_T, boundary23_T_to_P } from '../regions/boundaries.js';
 import { region1 } from '../regions/region1.js';
@@ -263,103 +264,12 @@ function detectRegionByTemperatureProperty(
 }
 
 /**
- * Detect the IAPWS-IF97 region for given T and H.
- *
- * Uses explicit enthalpy comparisons (including saturation-boundary proximity
- * checks via `isClose`) rather than the generic helper, because enthalpy is
- * not monotonic across regions at some temperatures.
- *
- * @param T - Temperature [K]
- * @param h - Specific enthalpy [kJ/kg]
- * @returns Region number (1–5) or -1 if out of range
+ * Detect the region only when T and h identify a unique physical state.
+ * @returns Region number (1–5) or -1 if no valid state exists
+ * @throws {AmbiguousStateError} if multiple physical states match, even in one region
  */
 export function detectRegionTH(T: number, h: number): Region | -1 {
-  if (T < C.T_MIN || T > C.T_MAX) {
-    return -1;
-  }
-
-  if (T > C.R5_T_MIN) {
-    return inRange(
-      h,
-      region5(C.P_MIN, T).enthalpy,
-      region5(C.R5_P_MAX, T).enthalpy,
-    )
-      ? Region.Region5
-      : -1;
-  }
-
-  if (T > C.B23_T_MAX) {
-    return inRange(
-      h,
-      region2(C.P_MIN, T).enthalpy,
-      region2(C.P_MAX, T).enthalpy,
-    )
-      ? Region.Region2
-      : -1;
-  }
-
-  if (T >= C.Tc) {
-    const p23 = boundary23_T_to_P(T);
-    if (inRange(
-      h,
-      region2(C.P_MIN, T).enthalpy,
-      region2(p23, T).enthalpy,
-    )) {
-      return Region.Region2;
-    }
-
-    return inRange(
-      h,
-      solveRegion3PTBasic(p23, T).enthalpy,
-      solveRegion3PTBasic(C.P_MAX, T).enthalpy,
-    )
-      ? Region.Region3
-      : -1;
-  }
-
-  const endpoints = saturationEndpointsAtTemperature(T);
-  const hf = endpoints.liquid.enthalpy;
-  const hg = endpoints.vapor.enthalpy;
-
-  if (T < C.Tt) {
-    if (inRange(h, hf, region1(C.P_MAX, T).enthalpy)) {
-      return Region.Region1;
-    }
-
-    return inRange(h, hg, region2(C.P_MIN, T).enthalpy)
-      ? Region.Region2
-      : -1;
-  }
-
-  // Exact saturation boundary: snap to Region 4 immediately.
-  if (isClose(h, hf) || isClose(h, hg)) {
-    return Region.Region4;
-  }
-
-  // Compressed liquid / supercritical fluid checks MUST come before the
-  // general two-phase dome check. Compressed liquid enthalpy is slightly
-  // above hf, so it falls within [hf, hg] — checking R4 first would
-  // misclassify compressed liquid states.
-  //
-  // For T > 623.15 K (near Tc), enthalpy decreases with pressure in R3,
-  // so the R3 range [h_R3_max, hf] does NOT overlap the dome [hf, hg],
-  // and the R4 fallback below correctly catches two-phase states.
-  if (T <= C.R2_T_MIN && inRange(h, hf, region1(C.P_MAX, T).enthalpy)) {
-    return Region.Region1;
-  }
-
-  if (T > C.R2_T_MIN && inRange(h, hf, solveRegion3PTBasic(C.P_MAX, T).enthalpy)) {
-    return Region.Region3;
-  }
-
-  // Remaining enthalpy values in the dome are two-phase.
-  if (inRange(h, hf, hg)) {
-    return Region.Region4;
-  }
-
-  return inRange(h, hg, region2(C.P_MIN, T).enthalpy)
-    ? Region.Region2
-    : -1;
+  return uniqueTHState(T, h)?.region ?? -1;
 }
 
 /**

@@ -13,7 +13,7 @@ import { Region } from '../types.js';
 
 // ─── Coefficient Table (Table 2, IAPWS-IF97) ───────────────────────────────
 
-const COEFFICIENTS: CoefficientTable = [
+export const COEFFICIENTS: CoefficientTable = [
   [0, -2, 0.14632971213167],
   [0, -1, -0.84548187169114],
   [0, 0, -3.756360367204],

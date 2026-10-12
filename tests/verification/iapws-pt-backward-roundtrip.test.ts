@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AmbiguousStateError,
   Region,
   solveHS,
   solvePH,
@@ -16,12 +17,14 @@ interface OfficialPtCase {
   pressure: number;
   temperature: number;
   region: Region;
+  ambiguousTH?: boolean;
 }
 
 const OFFICIAL_PT_CASES: readonly OfficialPtCase[] = [
-  { source: 'IF97 Table 5', name: 'R1: T=300 K, p=3 MPa', pressure: 3, temperature: 300, region: Region.Region1 },
-  { source: 'IF97 Table 5', name: 'R1: T=300 K, p=80 MPa', pressure: 80, temperature: 300, region: Region.Region1 },
-  { source: 'IF97 Table 5', name: 'R1: T=500 K, p=3 MPa', pressure: 3, temperature: 500, region: Region.Region1 },
+  // These compressed-liquid T,h pairs also describe wet steam at saturation.
+  { source: 'IF97 Table 5', name: 'R1: T=300 K, p=3 MPa', pressure: 3, temperature: 300, region: Region.Region1, ambiguousTH: true },
+  { source: 'IF97 Table 5', name: 'R1: T=300 K, p=80 MPa', pressure: 80, temperature: 300, region: Region.Region1, ambiguousTH: true },
+  { source: 'IF97 Table 5', name: 'R1: T=500 K, p=3 MPa', pressure: 3, temperature: 500, region: Region.Region1, ambiguousTH: true },
   { source: 'IF97 Table 15', name: 'R2: T=300 K, p=0.0035 MPa', pressure: 0.0035, temperature: 300, region: Region.Region2 },
   { source: 'IF97 Table 15', name: 'R2: T=700 K, p=0.0035 MPa', pressure: 0.0035, temperature: 700, region: Region.Region2 },
   { source: 'IF97 Table 15', name: 'R2: T=700 K, p=30 MPa', pressure: 30, temperature: 700, region: Region.Region2 },
@@ -110,6 +113,13 @@ describe('IAPWS PT-led backward cross-verification', () => {
           });
 
           BACKWARD_SOLVERS.forEach((backwardSolver) => {
+            if (backwardSolver.name === 'solveTH' && testCase.ambiguousTH) {
+              it('solveTH rejects the ambiguous T,h pair', () => {
+                const forward = solvePT(testCase.pressure, testCase.temperature);
+                expect(() => backwardSolver.solve(forward)).toThrow(AmbiguousStateError);
+              });
+              return;
+            }
             it(`${backwardSolver.name} reproduces the PT state`, () => {
               const forward = solvePT(testCase.pressure, testCase.temperature);
               const backward = backwardSolver.solve(forward);

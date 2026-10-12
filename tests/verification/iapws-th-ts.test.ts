@@ -1,18 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { Region, solve, solvePT, solveTH, solveTS } from '../../src/index.js';
+import { AmbiguousStateError, Region, solve, solvePT, solveTH, solveTS } from '../../src/index.js';
 import { expectRelativeClose } from '../helpers/assertions.js';
 import { expectBackwardValue } from '../helpers/backward-assertions.js';
 
 describe('IAPWS TH/TS backward verification', () => {
   describe('Region 1 — Table 5 backward check', () => {
-    it('solveTH / solveTS recover P=3MPa from T=300K', () => {
+    it('rejects ambiguous TH but recovers P=3MPa from T=300K via TS', () => {
       const forward = solvePT(3, 300);
-      const fromTH = solveTH(300, forward.enthalpy);
+      // The same T,h also describes wet steam at the saturation pressure.
+      expect(() => solveTH(300, forward.enthalpy)).toThrow(AmbiguousStateError);
       const fromTS = solveTS(300, forward.entropy);
 
-      expect(fromTH.region).toBe(Region.Region1);
       expect(fromTS.region).toBe(Region.Region1);
-      expectRelativeClose(fromTH.pressure, 3);
       expectRelativeClose(fromTS.pressure, 3);
     });
   });

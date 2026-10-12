@@ -13,7 +13,7 @@ import { IF97Error, Region } from '../types.js';
 
 // ─── Coefficient Table (Table 30, IAPWS-IF97) ──────────────────────────────
 
-const COEFFICIENTS: CoefficientTable = [
+export const COEFFICIENTS: CoefficientTable = [
   // Entry 0 is the coefficient n₁ for the logarithmic term n₁·ln(δ).
   // It shares the [I=0, J=0] shape with entry 1 but is handled separately
   // in the evaluation loop (index 0 = ln term, indices 1+ = polynomial).

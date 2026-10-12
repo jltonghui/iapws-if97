@@ -52,4 +52,4 @@ export function solveTx(T: number, x: number): SteamState {
 
 // Types
 export type { SteamState, SolveInput } from './types.js';
-export { Region, IF97Error, OutOfRangeError, ConvergenceError } from './types.js';
+export { Region, IF97Error, AmbiguousStateError, OutOfRangeError, ConvergenceError } from './types.js';

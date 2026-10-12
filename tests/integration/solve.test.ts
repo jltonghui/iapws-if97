@@ -191,14 +191,14 @@ describe('solve() unified dispatcher', () => {
   });
 
   it('routes TH input', () => {
-    const fwd = region1(3, 300);
+    const fwd = region1(10, 573.15);
     const state = solve({ mode: 'TH', T: fwd.temperature, h: fwd.enthalpy });
     expectBackwardValue(state.pressure, fwd.pressure, 'pressure');
     expectBackwardValue(state.temperature, fwd.temperature, 'temperature');
   });
 
   it('accepts TH long-form aliases', () => {
-    const fwd = region1(3, 300);
+    const fwd = region1(10, 573.15);
     const state = solve({ mode: 'TH', temperature: fwd.temperature, enthalpy: fwd.enthalpy });
     expectBackwardValue(state.pressure, fwd.pressure, 'pressure');
     expectBackwardValue(state.temperature, fwd.temperature, 'temperature');

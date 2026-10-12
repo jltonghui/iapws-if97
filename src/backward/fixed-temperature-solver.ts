@@ -78,7 +78,11 @@ export function solveFixedTemperaturePressure(
     lower,
     upper,
     (lower + upper) / 2,
-    { derivative: (p) => pressureDerivative(stateAt(p), property) },
+    {
+      derivative: (p) => pressureDerivative(stateAt(p), property),
+      // Near-critical enthalpy needs a tighter pressure bracket before termination.
+      tolerance: property === 'enthalpy' ? 1e-12 : undefined,
+    },
   );
 
   const state = stateAt(pressure);

@@ -52,6 +52,10 @@ console.log(c.quality);     // 0.5
 
 All numeric inputs must be finite numbers.
 
+`solveTH(T, h)` requires a unique solution in the supported IF97 range. Some pairs describe both compressed liquid and wet steam, or two compressed-liquid pressures on a non-monotonic isotherm. For these pairs, `solveTH` throws `AmbiguousStateError`. If you know the pressure or vapor quality, use `solvePT(p, T)` or `solveTx(T, x)`.
+
+`solveTH` uses an absolute enthalpy tolerance of `1e-9 kJ/kg` at branch endpoints and isotherm extrema. Inputs within this tolerance match the endpoint or extremum. Pressure recovery near an extremum is ill-conditioned.
+
 ### Unified `solve()`
 
 Use `solve({ mode, ... })` when the input pair is determined at runtime:
@@ -170,7 +174,7 @@ import { detectRegionPT } from 'iapws-if97/detect';
 These are low-level mathematical interfaces:
 
 - Region functions return core thermodynamic properties without `density` or transport-property enrichment.
-- Region, boundary, and detection helpers expect callers to respect the corresponding equation domains. Detection helpers return a `Region` value or `-1` when no valid region is found.
+- Region, boundary, and detection helpers expect callers to respect the corresponding equation domains. Detection helpers return a `Region` value or `-1` when no valid region is found. `detectRegionTH(T, h)` also throws `AmbiguousStateError` when multiple states match, even within the same region.
 - `thermalConductivity(T, rho)` calculates the base contribution. Pass `cp`, `cv`, `drhodP_T`, and `mu` to include the IAPWS 2011 critical-enhancement term.
 - `surfaceTension(T)` is a saturation-line property. `saturationPressure(T)` and `saturationTemperature(p)` expose the mathematical Region 4 boundary and are more permissive at endpoints than `solveTx` and `solvePx`.
 
@@ -208,7 +212,10 @@ The library throws typed errors:
 | --- | --- |
 | `OutOfRangeError` | Input is outside the supported IF97 range |
 | `ConvergenceError` | An internal iterative solve failed to converge |
+| `AmbiguousStateError` | Multiple physical states match the supplied temperature and enthalpy |
 | `IF97Error` | Base class; root solvers also use it directly for non-numeric or non-finite inputs, conflicting aliases, unsupported modes, and unsupported critical-point states |
+
+`AmbiguousStateError` extends `IF97Error`. Both `solveTH(T, h)` and `solve({ mode: 'TH', ... })` reject ambiguous inputs. Calls that previously selected one branch can now throw this error. Use `solvePT(p, T)` if you know the pressure, or `solveTx(T, x)` if you know the vapor quality.
 
 Numeric inputs to root solvers and transport helpers must be finite. Low-level region, boundary, and detection helpers rely on callers to respect their equation domains. `solvePT(Pc, Tc)`, exact critical Region 4 states, and `solveTH`/`solveTS` inputs within `0.001 K` of `Tc` are rejected because the required derivative properties or inverse solution are singular or ill-conditioned.
 

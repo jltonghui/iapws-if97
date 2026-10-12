@@ -11,7 +11,7 @@ import { expectBackwardValue, expectRegion4RoundTrip, expectSpecificVolume } fro
 
 describe('detectRegionTH', () => {
   it('detects Region 1 from a known compressed-liquid state', () => {
-    const state = region1(3, 300);
+    const state = region1(10, 573.15);
     expect(detectRegionTH(state.temperature, state.enthalpy)).toBe(Region.Region1);
   });
 
@@ -67,7 +67,7 @@ describe('detectRegionTH', () => {
 
 describe('solveTH backward equations', () => {
   it('round-trips a Region 1 state', () => {
-    const forward = region1(3, 300);
+    const forward = region1(10, 573.15);
     const backward = solveTH(forward.temperature, forward.enthalpy);
 
     expect(backward.region).toBe(Region.Region1);

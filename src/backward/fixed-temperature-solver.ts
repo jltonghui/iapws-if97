@@ -5,9 +5,10 @@
  * (enthalpy or entropy) using a bracketed Newton method.
  */
 import type { BasicProperties } from '../types.js';
-import { IF97Error } from '../types.js';
+import { IF97Error, Region } from '../types.js';
+import { region3ByRhoT } from '../regions/region3.js';
 import { bracketedNewton } from '../solvers/bracketed-newton.js';
-import { gibbsPropertyDerivatives } from './thermodynamic-derivatives.js';
+import { gibbsPropertyDerivatives, helmholtzPropertyDerivatives } from './thermodynamic-derivatives.js';
 
 /** Property being inverted against pressure at fixed temperature. */
 export type FixedTemperatureProperty = 'enthalpy' | 'entropy';
@@ -36,7 +37,7 @@ function pressureDerivative(
  *
  * Evaluates the region equation at the bracket endpoints first (short-circuit
  * if either already matches), then runs a bracketed Newton iteration driven by
- * the analytic pressure derivative.
+ * the analytic pressure derivative (density derivative for Region 3 entropy).
  *
  * @param evaluator  - Region-specific equation returning BasicProperties from (p, T)
  * @param T          - Fixed temperature [K]
@@ -55,38 +56,47 @@ export function solveFixedTemperaturePressure(
   property: FixedTemperatureProperty,
   solverName: string,
 ): BasicProperties {
-  // Keyed by p, so the residual and its derivative at the same point share one
+  const lowerState = evaluator(lower, T);
+  const upperState = evaluator(upper, T);
+  const useDensity = lowerState.region === Region.Region3 && property === 'entropy';
+  // Density bounds keep Region 3 entropy iteration on the same saturation branch.
+  const lowerBound = useDensity ? 1 / lowerState.specificVolume : lower;
+  const upperBound = useDensity ? 1 / upperState.specificVolume : upper;
+
+  // Keyed by p or ρ, so the residual and its derivative at the same point share one
   // equation evaluation regardless of the order the solver calls them in.
-  let cachedPressure = Number.NaN;
+  let cachedInput = Number.NaN;
   let cachedState: BasicProperties | null = null;
-  const stateAt = (p: number): BasicProperties => {
-    if (p !== cachedPressure || cachedState === null) {
-      cachedPressure = p;
-      cachedState = evaluator(p, T);
+  const stateAt = (input: number): BasicProperties => {
+    if (input !== cachedInput || cachedState === null) {
+      cachedInput = input;
+      cachedState = useDensity ? region3ByRhoT(input, T) : evaluator(input, T);
     }
     return cachedState;
   };
-
-  const lowerState = evaluator(lower, T);
-  const upperState = evaluator(upper, T);
 
   const rootTolerance = property === 'enthalpy' ? 1e-9 : 1e-12;
   if (Math.abs(propertyValue(lowerState, property) - target) <= rootTolerance) return lowerState;
   if (Math.abs(propertyValue(upperState, property) - target) <= rootTolerance) return upperState;
 
-  const pressure = bracketedNewton(
-    (p) => propertyValue(stateAt(p), property) - target,
-    lower,
-    upper,
-    (lower + upper) / 2,
+  const root = bracketedNewton(
+    (input) => propertyValue(stateAt(input), property) - target,
+    lowerBound,
+    upperBound,
+    (lowerBound + upperBound) / 2,
     {
-      derivative: (p) => pressureDerivative(stateAt(p), property),
-      // Near-critical properties need a tighter pressure bracket before termination.
+      derivative: (input) => {
+        if (useDensity) {
+          return helmholtzPropertyDerivatives(stateAt(input), input).dsDrho;
+        }
+        return pressureDerivative(stateAt(input), property);
+      },
+      // Near-critical properties need a tighter bracket before termination.
       tolerance: 1e-12,
     },
   );
 
-  const state = stateAt(pressure);
+  const state = stateAt(root);
   if (!Number.isFinite(state.pressure)) {
     throw new IF97Error(`${solverName} failed to recover a valid pressure`);
   }

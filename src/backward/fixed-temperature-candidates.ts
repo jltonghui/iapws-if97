@@ -12,17 +12,21 @@ import {
 } from '../saturation/common.js';
 import type { BasicProperties } from '../types.js';
 import { AmbiguousStateError } from '../types.js';
-import { enthalpyStationaryPressures } from './enthalpy-stationary.js';
-import { solveFixedTemperaturePressure } from './fixed-temperature-solver.js';
+import { fixedTemperatureStationaryPressures } from './fixed-temperature-stationary.js';
+import { solveFixedTemperaturePressure, type FixedTemperatureProperty } from './fixed-temperature-solver.js';
 
-const ENTHALPY_ROOT_TOLERANCE = 1e-9;
-
-/** Return the only physical TH state, or null if none exists. */
-export function uniqueTHState(T: number, h: number): BasicProperties | null {
-  if (!Number.isFinite(T) || !Number.isFinite(h) || T < C.T_MIN || T > C.T_MAX) {
+/** Return the only physical TH/TS state, or null if none exists. */
+export function uniqueFixedTemperatureState(
+  T: number,
+  target: number,
+  property: FixedTemperatureProperty,
+): BasicProperties | null {
+  if (!Number.isFinite(T) || !Number.isFinite(target) || T < C.T_MIN || T > C.T_MAX) {
     return null;
   }
 
+  const solverName = property === 'enthalpy' ? 'solveTH' : 'solveTS';
+  const rootTolerance = property === 'enthalpy' ? 1e-9 : 1e-12;
   const candidates: BasicProperties[] = [];
   const add = (state: BasicProperties): void => {
     // The same saturation endpoint or stationary point can bound two intervals.
@@ -51,26 +55,26 @@ export function uniqueTHState(T: number, h: number): BasicProperties | null {
     };
     const points = [
       lower,
-      ...enthalpyStationaryPressures(T, lower.region, lower, upper)
+      ...fixedTemperatureStationaryPressures(T, lower.region, lower, upper, property)
         .map((p) => stateAt(p, T)),
       upper,
     ];
 
     for (let i = 0; i < points.length; i++) {
       const current = points[i];
-      const residual = current.enthalpy - h;
-      if (Math.abs(residual) <= ENTHALPY_ROOT_TOLERANCE) {
+      const residual = current[property] - target;
+      if (Math.abs(residual) <= rootTolerance) {
         if ((i > 0 || includeLower) && (i < points.length - 1 || includeUpper)) add(current);
       }
       if (i === 0) continue;
       const previous = points[i - 1];
-      const previousResidual = previous.enthalpy - h;
-      if (Math.abs(residual) <= ENTHALPY_ROOT_TOLERANCE ||
-          Math.abs(previousResidual) <= ENTHALPY_ROOT_TOLERANCE ||
+      const previousResidual = previous[property] - target;
+      if (Math.abs(residual) <= rootTolerance ||
+          Math.abs(previousResidual) <= rootTolerance ||
           previousResidual * residual >= 0) continue;
 
       add(solveFixedTemperaturePressure(
-        stateAt, T, h, previous.pressure, current.pressure, 'enthalpy', 'solveTH',
+        stateAt, T, target, previous.pressure, current.pressure, property, solverName,
       ));
     }
   };
@@ -89,10 +93,10 @@ export function uniqueTHState(T: number, h: number): BasicProperties | null {
   } else {
     const endpoints = saturationEndpointsAtTemperature(T);
     if (T >= C.Tt &&
-        h >= endpoints.liquid.enthalpy - ENTHALPY_ROOT_TOLERANCE &&
-        h <= endpoints.vapor.enthalpy + ENTHALPY_ROOT_TOLERANCE) {
+        target >= endpoints.liquid[property] - rootTolerance &&
+        target <= endpoints.vapor[property] + rootTolerance) {
       add(mixSaturationState(endpoints, qualityFromSaturationProperty(
-        endpoints.liquid.enthalpy, endpoints.vapor.enthalpy, h,
+        endpoints.liquid[property], endpoints.vapor[property], target,
       )));
     }
 
@@ -113,7 +117,7 @@ export function uniqueTHState(T: number, h: number): BasicProperties | null {
   }
 
   if (candidates.length > 1) {
-    throw new AmbiguousStateError(T, h);
+    throw new AmbiguousStateError(T, target, property);
   }
   return candidates[0] ?? null;
 }

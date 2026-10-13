@@ -7,7 +7,7 @@ import type { BasicProperties } from '../types.js';
 import * as C from '../constants.js';
 import { IF97Error, OutOfRangeError } from '../types.js';
 import { assertFiniteNumber } from '../core/input-validation.js';
-import { uniqueTHState } from './th-candidates.js';
+import { uniqueFixedTemperatureState } from './fixed-temperature-candidates.js';
 import { validateBackwardState } from './solution-validation.js';
 
 /**
@@ -41,7 +41,7 @@ export function solveTH(T: number, h: number): BasicProperties {
     );
   }
 
-  const state = uniqueTHState(T, h);
+  const state = uniqueFixedTemperatureState(T, h, 'enthalpy');
   if (state === null) {
     throw new IF97Error(`solveTH cannot determine a valid IF97 state for T=${T} K, h=${h} kJ/kg`);
   }

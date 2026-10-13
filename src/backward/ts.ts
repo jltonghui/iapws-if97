@@ -1,35 +1,19 @@
 /**
  * Backward equation T,S → state.
  *
- * Given temperature and specific entropy, determines the IAPWS-IF97 region
- * and solves for pressure using a bracketed Newton method, then returns
- * the full set of basic thermodynamic properties.
+ * Returns a state only when temperature and entropy determine it uniquely.
  */
 import type { BasicProperties } from '../types.js';
 import * as C from '../constants.js';
-import { IF97Error, OutOfRangeError, Region } from '../types.js';
+import { IF97Error, OutOfRangeError } from '../types.js';
 import { assertFiniteNumber } from '../core/input-validation.js';
-import { detectRegionTS } from '../core/region-detector.js';
-import { solveRegion3PTBasic } from '../core/region3-pt.js';
-import { region1 } from '../regions/region1.js';
-import { region2 } from '../regions/region2.js';
-import { region5 } from '../regions/region5.js';
-import { boundary23_T_to_P } from '../regions/boundaries.js';
-import { saturationPressure } from '../regions/region4.js';
-import {
-  mixSaturationState,
-  qualityFromSaturationProperty,
-  saturationEndpointsAtTemperature,
-} from '../saturation/common.js';
-import { assertRegion4StateAllowed } from '../saturation/region4-boundaries.js';
-import { solveFixedTemperaturePressure } from './fixed-temperature-solver.js';
+import { uniqueFixedTemperatureState } from './fixed-temperature-candidates.js';
 import { validateBackwardState } from './solution-validation.js';
 
 /**
  * Solve for full basic thermodynamic state from temperature and entropy.
  *
- * Detects the IAPWS-IF97 region, then inverts s(p, T) to recover pressure
- * within the appropriate bracket for that region.
+ * Searches every valid isotherm branch and rejects ambiguous inputs.
  *
  * Temperatures within ±CRITICAL_T_EXCLUSION_BAND of Tc are rejected because
  * the entropy surface is nearly flat there, making pressure recovery unreliable.
@@ -39,6 +23,7 @@ import { validateBackwardState } from './solution-validation.js';
  * @returns Basic thermodynamic properties (without transport)
  * @throws {OutOfRangeError} if T is outside [T_MIN, T_MAX]
  * @throws {IF97Error} if T is within the critical exclusion band
+ * @throws {AmbiguousStateError} if multiple physical states match T and s
  */
 export function solveTS(T: number, s: number): BasicProperties {
   assertFiniteNumber('Temperature', T);
@@ -56,85 +41,12 @@ export function solveTS(T: number, s: number): BasicProperties {
     );
   }
 
-  const region = detectRegionTS(T, s);
-
-  switch (region) {
-    case Region.Region1:
-      return validateBackwardState(solveFixedTemperaturePressure(
-        region1, T, s,
-        saturationPressure(T), C.P_MAX,
-        'entropy', 'solveTS',
-      ), [
-        { label: 'temperature', expected: T },
-        { label: 'entropy', expected: s },
-      ], {
-        solverName: 'solveTS',
-        expectedRegion: Region.Region1,
-      });
-    case Region.Region2: {
-      const upper = T <= C.Tc
-        ? saturationPressure(T)
-        : T <= C.B23_T_MAX
-          ? boundary23_T_to_P(T)
-          : C.P_MAX;
-      return validateBackwardState(solveFixedTemperaturePressure(
-        region2, T, s,
-        C.P_MIN, upper,
-        'entropy', 'solveTS',
-      ), [
-        { label: 'temperature', expected: T },
-        { label: 'entropy', expected: s },
-      ], {
-        solverName: 'solveTS',
-        expectedRegion: Region.Region2,
-      });
-    }
-    case Region.Region3: {
-      const lower = T <= C.Tc
-        ? saturationPressure(T)
-        : boundary23_T_to_P(T);
-      return validateBackwardState(solveFixedTemperaturePressure(
-        solveRegion3PTBasic, T, s,
-        lower, C.P_MAX,
-        'entropy', 'solveTS',
-      ), [
-        { label: 'temperature', expected: T },
-        { label: 'entropy', expected: s },
-      ], {
-        solverName: 'solveTS',
-        expectedRegion: Region.Region3,
-      });
-    }
-    case Region.Region4: {
-      const endpoints = saturationEndpointsAtTemperature(T);
-      assertRegion4StateAllowed(endpoints.pressure, endpoints.temperature, 'solveTS');
-      const x = qualityFromSaturationProperty(
-        endpoints.liquid.entropy,
-        endpoints.vapor.entropy,
-        s,
-      );
-      return validateBackwardState(
-        mixSaturationState(endpoints, x),
-        [
-          { label: 'temperature', expected: T },
-          { label: 'entropy', expected: s },
-        ],
-        { solverName: 'solveTS', expectedRegion: Region.Region4 },
-      );
-    }
-    case Region.Region5:
-      return validateBackwardState(solveFixedTemperaturePressure(
-        region5, T, s,
-        C.P_MIN, C.R5_P_MAX,
-        'entropy', 'solveTS',
-      ), [
-        { label: 'temperature', expected: T },
-        { label: 'entropy', expected: s },
-      ], {
-        solverName: 'solveTS',
-        expectedRegion: Region.Region5,
-      });
-    default:
-      throw new IF97Error(`solveTS cannot determine a valid IF97 state for T=${T} K, s=${s} kJ/(kg·K)`);
+  const state = uniqueFixedTemperatureState(T, s, 'entropy');
+  if (state === null) {
+    throw new IF97Error(`solveTS cannot determine a valid IF97 state for T=${T} K, s=${s} kJ/(kg·K)`);
   }
+  return validateBackwardState(state, [
+    { label: 'temperature', expected: T },
+    { label: 'entropy', expected: s },
+  ], { solverName: 'solveTS', expectedRegion: state.region });
 }

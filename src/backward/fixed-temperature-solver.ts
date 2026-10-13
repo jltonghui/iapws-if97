@@ -70,8 +70,9 @@ export function solveFixedTemperaturePressure(
   const lowerState = evaluator(lower, T);
   const upperState = evaluator(upper, T);
 
-  if (Math.abs(propertyValue(lowerState, property) - target) <= 1e-9) return lowerState;
-  if (Math.abs(propertyValue(upperState, property) - target) <= 1e-9) return upperState;
+  const rootTolerance = property === 'enthalpy' ? 1e-9 : 1e-12;
+  if (Math.abs(propertyValue(lowerState, property) - target) <= rootTolerance) return lowerState;
+  if (Math.abs(propertyValue(upperState, property) - target) <= rootTolerance) return upperState;
 
   const pressure = bracketedNewton(
     (p) => propertyValue(stateAt(p), property) - target,
@@ -80,8 +81,8 @@ export function solveFixedTemperaturePressure(
     (lower + upper) / 2,
     {
       derivative: (p) => pressureDerivative(stateAt(p), property),
-      // Near-critical enthalpy needs a tighter pressure bracket before termination.
-      tolerance: property === 'enthalpy' ? 1e-12 : undefined,
+      // Near-critical properties need a tighter pressure bracket before termination.
+      tolerance: 1e-12,
     },
   );
 

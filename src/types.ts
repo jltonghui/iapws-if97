@@ -170,10 +170,13 @@ export class IF97Error extends Error {
   }
 }
 
-/** Thrown when temperature and enthalpy identify multiple physical states. */
+/** Thrown when TH or TS inputs identify multiple physical states. */
 export class AmbiguousStateError extends IF97Error {
-  constructor(T: number, h: number) {
-    super(`Ambiguous T-h state for T=${T} K, h=${h} kJ/kg: multiple physical states exist; supply an independent state constraint, for example using PT, PH, or Tx`);
+  constructor(T: number, value: number, property: 'enthalpy' | 'entropy' = 'enthalpy') {
+    const symbol = property === 'enthalpy' ? 'h' : 's';
+    const unit = property === 'enthalpy' ? 'kJ/kg' : 'kJ/(kg·K)';
+    const pressureMode = property === 'enthalpy' ? 'PH' : 'PS';
+    super(`Ambiguous T-${symbol} state for T=${T} K, ${symbol}=${value} ${unit}: multiple physical states exist; supply an independent state constraint, for example using PT, ${pressureMode}, or Tx`);
     this.name = 'AmbiguousStateError';
   }
 }

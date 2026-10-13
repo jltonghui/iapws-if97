@@ -4,6 +4,7 @@ import { RESIDUAL_COEFFICIENTS as R2_COEFFICIENTS } from '../regions/region2.js'
 import { COEFFICIENTS as R3_COEFFICIENTS, region3ByRhoT } from '../regions/region3.js';
 import { RESIDUAL_COEFFICIENTS as R5_COEFFICIENTS } from '../regions/region5.js';
 import { Region, type BasicProperties, type CoefficientTable } from '../types.js';
+import type { FixedTemperatureProperty } from './fixed-temperature-solver.js';
 
 function evaluate(coefficients: readonly number[], x: number): number {
   let value = 0;
@@ -43,11 +44,12 @@ function polynomialRoots(coefficients: number[], lower: number, upper: number): 
 }
 
 /** Locate isotherm extrema without a pressure grid, including closely spaced roots. */
-export function enthalpyStationaryPressures(
+export function fixedTemperatureStationaryPressures(
   T: number,
   region: Region,
   lowerState: BasicProperties,
   upperState: BasicProperties,
+  property: FixedTemperatureProperty,
 ): number[] {
   let table: CoefficientTable;
   let tau: number;
@@ -64,14 +66,29 @@ export function enthalpyStationaryPressures(
     : region === Region.Region3 ? 1 / (state.specificVolume * RHOc) : state.pressure;
   const lower = Math.min(nativeValue(lowerState), nativeValue(upperState));
   const upper = Math.max(nativeValue(lowerState), nativeValue(upperState));
-  const coefficients: number[] = Array(Math.max(...table.map(([I]) => I))).fill(0);
+  const logarithmicEntropy = property === 'entropy' && region !== Region.Region1;
+  const coefficients: number[] = Array(Math.max(...table.map(([I]) => I)) +
+    (logarithmicEntropy ? 1 : 0)).fill(0);
+  if (logarithmicEntropy) {
+    // Multiplying ds/dp (or ds/dδ) by its positive native variable clears 1/p (1/δ).
+    coefficients[0] = region === Region.Region3 ? -R3_COEFFICIENTS[0][2] : -1;
+  }
   for (const [I, J, N] of table) {
     if (I === 0) continue;
-    // Constant positive factors do not affect the zeros of dh/d(native variable).
-    const coefficient = region === Region.Region3
-      ? N * I * (I + J) * Math.pow(tau, J)
-      : J === 0 ? 0 : N * I * J * Math.pow(tau, J - 1);
-    coefficients[I - 1] += coefficient;
+    // Constant nonzero factors do not affect the derivative's zeros.
+    const tauDerivative = J === 0 ? 0 : J * Math.pow(tau, J - 1);
+    let coefficient: number;
+    if (property === 'enthalpy') {
+      coefficient = region === Region.Region3
+        ? N * I * (I + J) * Math.pow(tau, J)
+        : N * I * tauDerivative;
+    } else {
+      const physicalTau = tau + (region === Region.Region1 ? 1.222 : region === Region.Region2 ? 0.5 : 0);
+      coefficient = region === Region.Region3
+        ? N * I * (J - 1) * Math.pow(tau, J)
+        : N * I * (physicalTau * tauDerivative - Math.pow(tau, J));
+    }
+    coefficients[I - (logarithmicEntropy ? 0 : 1)] += coefficient;
   }
 
   // Scaling the native variable to [0, 1] avoids powers of pressures up to 100 MPa.

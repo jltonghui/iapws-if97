@@ -15,7 +15,7 @@ import { assertFiniteNumber } from '../core/input-validation.js';
 import { detectRegionPS } from '../core/region-detector.js';
 import { newtonRaphson } from '../solvers/newton-raphson.js';
 import { dampedNewton2D } from '../solvers/damped-newton-2d.js';
-import { validateBackwardState } from './solution-validation.js';
+import { validateBackwardState, validateRegion3PTReconstruction } from './solution-validation.js';
 import { helmholtzPropertyDerivatives } from './thermodynamic-derivatives.js';
 import {
   mixSaturationState,
@@ -184,6 +184,8 @@ function solveRegion3PS(p: number, s: number, rho0: number, T0: number): BasicPr
       ],
     };
   }, [rho0, T0], {
+    // Near saturation, the default residual can put the liquid root across Tsat.
+    tolerance: 1e-13,
     isValid: ([candidateRho, candidateT]) => candidateRho > 0 && candidateT > 0,
   });
   return region3ByRhoT(rho, T);
@@ -208,7 +210,17 @@ export function solvePS(p: number, s: number): BasicProperties {
   }
   assertCriticalRegion4PSInput(p, s, 'solvePS');
 
-  const region = detectRegionPS(p, s);
+  let region: Region | -1;
+  let saturationFailure: IF97Error | null = null;
+  try {
+    region = detectRegionPS(p, s);
+  } catch (error) {
+    if (!(error instanceof IF97Error) || !error.message.startsWith('Region 4 numerical inconsistency at ')) {
+      throw error;
+    }
+    saturationFailure = error;
+    region = Region.Region3;
+  }
 
   switch (region) {
     case Region.Region1: {
@@ -244,24 +256,32 @@ export function solvePS(p: number, s: number): BasicProperties {
       );
     }
     case Region.Region3: {
-      const pressureTolerance = 1e-5 * Math.max(1, Math.abs(p));
-      let T0: number, v0: number;
-      if (s <= C.R3_S_CRT) {
-        T0 = 760 * evalPoly(R3A_PS_T_TABLE, -0.240, 0.703, p / 100, s / 4.4);
-        v0 = 0.0028 * evalPoly(R3A_PS_V_TABLE, -0.187, 0.755, p / 100, s / 4.4);
-      } else {
-        T0 = 860 * evalPoly(R3B_PS_T_TABLE, -0.760, 0.818, p / 100, s / 5.3);
-        v0 = 0.0088 * evalPoly(R3B_PS_V_TABLE, -0.298, 0.816, p / 100, s / 5.3);
+      try {
+        const pressureTolerance = 1e-5 * Math.max(1, Math.abs(p));
+        let T0: number, v0: number;
+        if (s <= C.R3_S_CRT) {
+          T0 = 760 * evalPoly(R3A_PS_T_TABLE, -0.240, 0.703, p / 100, s / 4.4);
+          v0 = 0.0028 * evalPoly(R3A_PS_V_TABLE, -0.187, 0.755, p / 100, s / 4.4);
+        } else {
+          T0 = 860 * evalPoly(R3B_PS_T_TABLE, -0.760, 0.818, p / 100, s / 5.3);
+          v0 = 0.0088 * evalPoly(R3B_PS_V_TABLE, -0.298, 0.816, p / 100, s / 5.3);
+        }
+        const state = solveRegion3PS(p, s, 1 / v0, T0);
+        const validated = validateBackwardState(
+          state,
+          [
+            { label: 'pressure', expected: p, tolerance: pressureTolerance },
+            { label: 'entropy', expected: s },
+          ],
+          { solverName: 'solvePS', expectedRegion: Region.Region3 },
+        );
+        return saturationFailure === null
+          ? validated
+          : validateRegion3PTReconstruction(validated, 'solvePS');
+      } catch (error) {
+        if (saturationFailure !== null && error instanceof IF97Error) throw saturationFailure;
+        throw error;
       }
-      const state = solveRegion3PS(p, s, 1 / v0, T0);
-      return validateBackwardState(
-        state,
-        [
-          { label: 'pressure', expected: p, tolerance: pressureTolerance },
-          { label: 'entropy', expected: s },
-        ],
-        { solverName: 'solvePS', expectedRegion: Region.Region3 },
-      );
     }
     case Region.Region4: {
       const endpoints = saturationEndpointsAtPressure(p);

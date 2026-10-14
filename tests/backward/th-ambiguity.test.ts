@@ -1,11 +1,28 @@
 import { describe, expect, it } from 'vitest';
-import { AmbiguousStateError, IF97Error, Region, solve, solvePT, solveTH, solveTx } from '../../src/index.js';
+import { AmbiguousStateError, IF97Error, Region, solve, solvePT, solvePx, solveTH, solveTx } from '../../src/index.js';
 import { detectRegionTH } from '../../src/detect.js';
 import { boundary23_T_to_P } from '../../src/boundaries.js';
 import { saturationPressure } from '../../src/saturation.js';
+import { region2 } from '../../src/regions.js';
 import { expectBackwardValue, expectRegion4RoundTrip } from '../helpers/backward-assertions.js';
 
 describe('TH uniqueness', () => {
+  it.each([
+    [22.054, 1],
+    [22.063, 1 - 1e-9],
+    [22.063, 1],
+  ])('preserves the pressure-family vapor endpoint at p=%s, x=%s', (pressure, quality) => {
+    const forward = solvePx(pressure, quality);
+    const recovered = solveTH(forward.temperature, forward.enthalpy);
+
+    expect(recovered.region).toBe(Region.Region4);
+    expect(recovered.quality).not.toBeNull();
+    expect(Math.abs(recovered.quality! - quality)).toBeLessThan(1e-8);
+    expect(Math.abs(recovered.enthalpy - forward.enthalpy)).toBeLessThanOrEqual(1e-9);
+    expect(recovered.temperature).toBe(forward.temperature);
+    expectBackwardValue(recovered.pressure, forward.pressure, 'pressure', 1e-9);
+  });
+
   it('rejects liquid/wet ambiguity through every public TH entry point', () => {
     const wet = solveTx(473.15, 0.001);
     const liquid = solvePT(6.276280047308887, wet.temperature);
@@ -113,7 +130,7 @@ describe('TH uniqueness', () => {
   });
 
   it('detects both vapor and wet states at the 623.15 K formulation seam', () => {
-    const T = 623.15;
+    const T = 623.1500001;
     const vapor = solvePT(saturationPressure(T) - 1e-4, T);
     const saturatedLiquid = solveTx(T, 0);
     const saturatedVapor = solveTx(T, 1);
@@ -143,9 +160,40 @@ describe('TH uniqueness', () => {
     expectBackwardValue(solvePT(recovered.pressure, T).enthalpy, forward.enthalpy, 'enthalpy');
   });
 
-  it('preserves the PT-owned vapor endpoint below the triple-point temperature', () => {
+  it('keeps the liquid branch immediately above near-critical saturation', () => {
+    const T = 647.0949;
+    const h = solveTx(T, 0).enthalpy - 1e-8;
+    const recovered = solveTH(T, h);
+
+    expect(recovered.region).toBe(Region.Region3);
+    expect(recovered.enthalpy).toBe(h);
+    expect(recovered.density).toBeGreaterThan(322);
+    expectBackwardValue(solvePT(recovered.pressure, T).enthalpy, h, 'enthalpy');
+  });
+
+  it('recovers a near-critical wet state next to the vapor endpoint', () => {
+    const wet = solveTx(647.0949999, 0.999999999);
+    const recovered = solveTH(wet.temperature, wet.enthalpy);
+
+    expectRegion4RoundTrip(recovered, wet);
+    expect(recovered.enthalpy).toBe(wet.enthalpy);
+  });
+
+  it.each([650, 700])('keeps a root just inside an open B23 endpoint at T=%s K', (T) => {
+    const h = region2(boundary23_T_to_P(T), T).enthalpy + 5e-10;
+    if (T === 650) {
+      expect(() => solveTH(T, h)).toThrow(AmbiguousStateError);
+    } else {
+      const recovered = solveTH(T, h);
+      expect(recovered.region).toBe(Region.Region2);
+      expect(recovered.enthalpy).toBe(h);
+      expectBackwardValue(solvePT(recovered.pressure, T).enthalpy, h, 'enthalpy');
+    }
+  });
+
+  it('preserves a vapor state below the triple-point temperature', () => {
     const T = 273.159;
-    const forward = solvePT(saturationPressure(T), T);
+    const forward = solvePT(saturationPressure(T) - 1e-12, T);
     expect(forward.region).toBe(Region.Region2);
 
     const recovered = solveTH(T, forward.enthalpy);
@@ -154,6 +202,32 @@ describe('TH uniqueness', () => {
     expectBackwardValue(recovered.temperature, forward.temperature, 'temperature');
     expectBackwardValue(solvePT(recovered.pressure, T).enthalpy, forward.enthalpy, 'enthalpy');
     expect(detectRegionTH(T, forward.enthalpy)).toBe(forward.region);
+  });
+
+  it('recovers a vapor whose enthalpy rounds to an excluded endpoint value', () => {
+    const T = 273.159;
+    const forward = solvePT(saturationPressure(T) * (1 - Number.EPSILON), T);
+    const recovered = solveTH(T, forward.enthalpy);
+
+    expect(forward.region).toBe(Region.Region2);
+    expect(recovered.region).toBe(forward.region);
+    expect(recovered.pressure).toBeLessThan(saturationPressure(T));
+    expect(recovered.enthalpy).toBe(forward.enthalpy);
+    expectBackwardValue(solvePT(recovered.pressure, T).enthalpy, forward.enthalpy, 'enthalpy');
+  });
+
+  it.each([700, 850])('recovers an exact floating endpoint match at B23, T=%s K', (T) => {
+    const boundary = boundary23_T_to_P(T);
+    const bits = new DataView(new ArrayBuffer(8));
+    bits.setFloat64(0, boundary);
+    bits.setBigUint64(0, bits.getBigUint64(0) - 1n);
+    const forward = solvePT(bits.getFloat64(0), T);
+    const recovered = solveTH(T, forward.enthalpy);
+
+    expect(forward.region).toBe(Region.Region2);
+    expect(recovered.region).toBe(forward.region);
+    expect(recovered.pressure).toBeLessThan(boundary);
+    expect(recovered.enthalpy).toBe(forward.enthalpy);
   });
 
   it('distinguishes no physical root from ambiguity', () => {

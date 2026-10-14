@@ -10,12 +10,14 @@
 import type { BasicProperties } from '../types.js';
 import { OutOfRangeError } from '../types.js';
 import { assertFiniteNumber } from '../core/input-validation.js';
-import { saturationPressure } from '../regions/region4.js';
-import { mixSaturationState, saturationEndpointsAtPressure } from './common.js';
+import {
+  mixSaturationState,
+  saturationEndpointsAtPressure,
+  saturationEndpointsAtTemperature,
+} from './common.js';
 import {
   assertRegion4PressureStateInput,
   assertRegion4TemperatureStateInput,
-  normalizeRegion4Pressure,
 } from './region4-boundaries.js';
 
 // ─── solvePx ────────────────────────────────────────────────────────────────
@@ -55,6 +57,7 @@ export function solveTx(T: number, x: number): BasicProperties {
   }
 
   const temperature = assertRegion4TemperatureStateInput(T, 'solveTx');
-  const p = normalizeRegion4Pressure(saturationPressure(temperature));
-  return solvePx(p, x);
+  const endpoints = saturationEndpointsAtTemperature(temperature);
+  assertRegion4PressureStateInput(endpoints.pressure, 'solveTx');
+  return mixSaturationState(endpoints, x);
 }

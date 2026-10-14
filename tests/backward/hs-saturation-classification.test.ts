@@ -4,6 +4,7 @@ import { Tc } from '../../src/constants.js';
 import { detectRegionHS } from '../../src/core/region-detector.js';
 import { saturationPressure, saturationTemperature } from '../../src/regions/region4.js';
 import { Region } from '../../src/types.js';
+import { region3ByRhoT } from '../../src/regions/region3.js';
 import {
   expectBackwardValue,
   expectRegion4RoundTrip,
@@ -54,9 +55,18 @@ describe('H-S classification next to the saturation boundary', () => {
     },
   );
 
-  it('keeps a platform-rounded near-critical saturation input in Region 4', () => {
-    const backward = solveHS(2088.9078193652176, 4.4141248142462741);
+  it('keeps a fixed near-critical vapor input on its stable Region 3 branch', () => {
+    const h = 2088.9078193652176;
+    const s = 4.4141248142462741;
+    const backward = solveHS(h, s);
+    const raw = region3ByRhoT(1 / backward.specificVolume, backward.temperature);
 
-    expect(backward.region).toBe(Region.Region4);
+    expect(backward.region).toBe(Region.Region3);
+    expect(backward.quality).toBeNull();
+    expect(1 / backward.specificVolume).toBeLessThan(322);
+    expect(backward.pressure).toBeLessThan(saturationPressure(backward.temperature));
+    expect(raw.isothermalCompressibility).toBeGreaterThan(0);
+    expectBackwardValue(raw.enthalpy, h, 'enthalpy', 1e-8);
+    expectBackwardValue(raw.entropy, s, 'entropy', 1e-11);
   });
 });

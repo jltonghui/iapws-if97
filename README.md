@@ -127,7 +127,7 @@ type SteamState = {
 - `quality` is `null` for single-phase states; it is only defined on the saturation line.
 - In two-phase mixtures (`0 < x < 1`), `cp`, `cv`, `speedOfSound`, `isobaricExpansion`, `isothermalCompressibility`, `viscosity`, `thermalConductivity`, `dielectricConstant`, and `ionizationConstant` are `null`.
 - Saturation endpoints (`x = 0` or `x = 1`) still expose single-phase transport properties even though they carry Region 4 metadata.
-- `solvePT(p, T)` is a single-phase solver. On the subcritical saturation boundary it resolves to the liquid side.
+- `solvePT(p, T)` is a single-phase solver. It selects the liquid side of a subcritical isotherm when `p >= saturationPressure(T)`; use `solvePx` or `solveTx` to specify vapor quality.
 - `surfaceTension` is only available for Region 4 saturation states below the critical point; otherwise `null`.
 - `density` is provided directly, so there is no need to invert `specificVolume`.
 - `ionizationConstant` is `null` outside the IAPWS validity range for that correlation.
@@ -204,6 +204,12 @@ The triple and critical points are `Pt = 0.000611657 MPa`, `Tt = 273.16 K`, `Pc 
 - The solvers do not return the exact critical point as a Region 4 state.
 - `solveTH(T, h)` and `solveTS(T, s)` reject inputs within `0.001 K` of the critical temperature.
 
+Very close to the critical point, the independently fitted Region 3 and Region 4 equations can lack a stable vapor root at the same saturation pressure and temperature. Saturation-state construction throws `IF97Error` when it cannot obtain distinct, stable liquid and vapor endpoints. This can occur inside the nominal input bounds, for example at `p = 22.0639999 MPa`. See [IF97 section 10.2](https://iapws.org/technical-guidance/release/IF97-Rev.download) for the consistency limits between the saturation and single-phase equations.
+
+Near 623.15 K, the independent Region 1/2 and Region 3 fits can yield two saturation states with the same H and S. `solveHS` returns one state that passes the EOS and input-constraint checks; its temperature and quality can differ from another valid solution.
+
+Single-phase Region 3 inversion also throws `IF97Error` if it cannot construct a stable EOS state on the requested side of the saturation curve.
+
 ## Errors and limits
 
 The library throws typed errors:
@@ -254,6 +260,16 @@ npm test
 npm run test:coverage
 npm run test:standards
 ```
+
+The numerical scans check deterministic samples across the PT domain and saturation curve, including region boundaries and critical neighborhoods:
+
+```bash
+npm run build
+node scripts/scan-domain.mjs
+node scripts/scan-saturation.mjs
+```
+
+Each scan writes a JSON report and exits with an error if it finds an unresolved failure. Finite samples do not establish correctness over the continuous domain.
 
 ## Integration validation
 

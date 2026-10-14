@@ -19,7 +19,7 @@ import { assertFiniteNumber } from '../core/input-validation.js';
 import { detectRegionPH } from '../core/region-detector.js';
 import { newtonRaphson } from '../solvers/newton-raphson.js';
 import { dampedNewton2D } from '../solvers/damped-newton-2d.js';
-import { validateBackwardState } from './solution-validation.js';
+import { validateBackwardState, validateRegion3PTReconstruction } from './solution-validation.js';
 import { helmholtzPropertyDerivatives } from './thermodynamic-derivatives.js';
 import {
   mixSaturationState,
@@ -254,7 +254,17 @@ export function solvePH(p: number, h: number): BasicProperties {
   }
   assertCriticalRegion4PHInput(p, h, 'solvePH');
 
-  const region = detectRegionPH(p, h);
+  let region: Region | -1;
+  let saturationFailure: IF97Error | null = null;
+  try {
+    region = detectRegionPH(p, h);
+  } catch (error) {
+    if (!(error instanceof IF97Error) || !error.message.startsWith('Region 4 numerical inconsistency at ')) {
+      throw error;
+    }
+    saturationFailure = error;
+    region = Region.Region3;
+  }
 
   switch (region) {
     case Region.Region1: {
@@ -290,17 +300,25 @@ export function solvePH(p: number, h: number): BasicProperties {
       );
     }
     case Region.Region3: {
-      const pressureTolerance = 1e-5 * Math.max(1, Math.abs(p));
-      const initial = r3BackwardPHInitial(p, h);
-      const state = solveRegion3PH(p, h, initial.rho, initial.T);
-      return validateBackwardState(
-        state,
-        [
-          { label: 'pressure', expected: p, tolerance: pressureTolerance },
-          { label: 'enthalpy', expected: h },
-        ],
-        { solverName: 'solvePH', expectedRegion: Region.Region3 },
-      );
+      try {
+        const pressureTolerance = 1e-5 * Math.max(1, Math.abs(p));
+        const initial = r3BackwardPHInitial(p, h);
+        const state = solveRegion3PH(p, h, initial.rho, initial.T);
+        const validated = validateBackwardState(
+          state,
+          [
+            { label: 'pressure', expected: p, tolerance: pressureTolerance },
+            { label: 'enthalpy', expected: h },
+          ],
+          { solverName: 'solvePH', expectedRegion: Region.Region3 },
+        );
+        return saturationFailure === null
+          ? validated
+          : validateRegion3PTReconstruction(validated, 'solvePH');
+      } catch (error) {
+        if (saturationFailure !== null && error instanceof IF97Error) throw saturationFailure;
+        throw error;
+      }
     }
     case Region.Region4: {
       const endpoints = saturationEndpointsAtPressure(p);

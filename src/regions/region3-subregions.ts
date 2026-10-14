@@ -6,7 +6,7 @@ import { evalSubregion } from './region3-eval.js';
 import { REGION3_SUBREGIONS as R3 } from './region3-data.js';
 import { b3ab, b3cd, b3ef, b3gh, b3ij, b3jk, b3mn, b3op, b3qu, b3rx, b3uv, b3wx } from './boundaries.js';
 import { saturationPressure, saturationTemperature } from './region4.js';
-import { Pc } from '../constants.js';
+import { Pc, Tc } from '../constants.js';
 import { IF97Error } from '../types.js';
 
 // Shared liquid-side C/S saturation threshold from the Region 3 supplementary release.
@@ -75,6 +75,7 @@ export function region3Volume(p: number, T: number): number {
 
   const Tsat643 = 643.15;
   const Psat643 = saturationPressure(Tsat643);
+  const liquid = T <= Tc && p >= saturationPressure(T);
 
   if (p > Psat643 && p <= 22.5) {
     const tcd = b3cd(p), tqu = b3qu(p), trx = b3rx(p), tjk = b3jk(p);
@@ -94,8 +95,7 @@ export function region3Volume(p: number, T: number): number {
         if (T <= twx) return evalSubregion(R3.Z, p, T);
         return evalSubregion(R3.X, p, T);
       }
-      const Tsat = saturationTemperature(p);
-      if (T > Tsat) {
+      if (!liquid) {
         if (p <= 21.90096265) return evalSubregion(R3.X, p, T);
         if (T <= twx) return evalSubregion(R3.Z, p, T);
         return evalSubregion(R3.X, p, T);
@@ -109,25 +109,24 @@ export function region3Volume(p: number, T: number): number {
   }
 
   if (p > 20.5 && p <= Psat643) {
-    const tcd = b3cd(p), Ts = saturationTemperature(p), tjk = b3jk(p);
+    const tcd = b3cd(p), tjk = b3jk(p);
     if (T <= tcd) return evalSubregion(R3.C, p, T);
-    if (T <= Ts) return evalSubregion(R3.S, p, T);
+    if (liquid) return evalSubregion(R3.S, p, T);
     if (T <= tjk) return evalSubregion(R3.R, p, T);
     return evalSubregion(R3.K, p, T);
   }
 
   if (p >= R3_C_S_LIQUID_BOUNDARY_PRESSURE && p <= 20.5) {
-    const tcd = b3cd(p), Ts = saturationTemperature(p);
-    if (T <= Ts) {
-      if (T < tcd && T < Ts) return evalSubregion(R3.C, p, T);
+    const tcd = b3cd(p);
+    if (liquid) {
+      if (T < tcd && T < saturationTemperature(p)) return evalSubregion(R3.C, p, T);
       return evalSubregion(R3.S, p, T);
     }
     return evalSubregion(R3.T, p, T);
   }
 
   if (p > 16.5291642526) {
-    const Ts = saturationTemperature(p);
-    if (T <= Ts) return evalSubregion(R3.C, p, T);
+    if (liquid) return evalSubregion(R3.C, p, T);
     return evalSubregion(R3.T, p, T);
   }
 

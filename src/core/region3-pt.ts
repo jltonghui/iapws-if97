@@ -7,8 +7,9 @@
 import type { BasicProperties } from '../types.js';
 import * as C from '../constants.js';
 import { IF97Error } from '../types.js';
-import { region3ByRhoT } from '../regions/region3.js';
+import { region3ByRhoT, region3PressureResidual } from '../regions/region3.js';
 import { region3Volume } from '../regions/region3-subregions.js';
+import { saturationPressure, saturationPressurePair } from '../regions/region4.js';
 import { newtonRaphson } from '../solvers/newton-raphson.js';
 
 /**
@@ -26,9 +27,9 @@ export function solveRegion3StateAtPressure(
   p: number,
   T: number,
   rho0: number,
+  pressureLow = 0,
 ): BasicProperties {
-  // Keyed by ρ, so the residual and its derivative at the same point share one
-  // equation evaluation regardless of the order the solver calls them in.
+  // Cache full EOS properties for the density derivative and final state.
   let cachedRho = Number.NaN;
   let cachedState: BasicProperties | null = null;
   const stateAt = (rho: number): BasicProperties => {
@@ -44,7 +45,7 @@ export function solveRegion3StateAtPressure(
       if (!Number.isFinite(rhoGuess) || rhoGuess <= 0) {
         return Number.NaN;
       }
-      return stateAt(rhoGuess).pressure - p;
+      return region3PressureResidual(rhoGuess, T, p, pressureLow);
     },
     rho0,
     (rhoGuess) => {
@@ -54,6 +55,7 @@ export function solveRegion3StateAtPressure(
       const kappa = stateAt(rhoGuess).isothermalCompressibility;
       return kappa === null ? Number.NaN : 1 / (rhoGuess * kappa);
     },
+    { tolerance: 1e-12 },
   );
 
   return stateAt(rho);
@@ -75,12 +77,24 @@ export function solveRegion3PTBasic(p: number, T: number): BasicProperties {
     return region3ByRhoT(C.RHOc, T);
   }
 
-  const state = solveRegion3StateAtPressure(p, T, 1 / region3Volume(p, T));
+  const saturation = T < C.Tc ? saturationPressure(T) : null;
+  const pressurePair = p === saturation ? saturationPressurePair(T) : null;
+  const pressureLow = pressurePair?.[0] === p ? pressurePair[1] : 0;
+  const state = solveRegion3StateAtPressure(p, T, 1 / region3Volume(p, T), pressureLow);
   const relErr = Math.abs(state.pressure - p) / p;
   if (relErr > 1e-6) {
     throw new IF97Error(
       `solveRegion3PTBasic: density solve did not converge — target P=${p} MPa, got P=${state.pressure.toFixed(6)} MPa (relErr=${relErr.toExponential(2)})`,
     );
   }
-  return state;
+  const rho = 1 / state.specificVolume;
+  const liquid = saturation !== null && p >= saturation;
+  if ((T < C.Tc && (liquid ? rho <= C.RHOc : rho >= C.RHOc)) ||
+      ![state.cp, state.cv, state.isothermalCompressibility, state.speedOfSound]
+        .every((value) => value !== null && Number.isFinite(value) && value > 0)) {
+    throw new IF97Error(
+      `Region 3 numerical inconsistency at p=${p} MPa, T=${T} K: cannot construct the requested stable ${T < C.Tc ? liquid ? 'liquid' : 'vapor' : 'single-phase'} EOS branch`,
+    );
+  }
+  return { ...state, pressure: p };
 }

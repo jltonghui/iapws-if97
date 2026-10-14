@@ -73,7 +73,7 @@ export function solvePT(p: number, T: number): SteamState {
   if (T > C.R5_T_MIN && p > C.R5_P_MAX) {
     throw new OutOfRangeError('Pressure', p, C.P_MIN, C.R5_P_MAX);
   }
-  if (Math.abs(T - C.Tc) < C.CRITICAL_T_EXCLUSION_BAND && Math.abs(p - C.Pc) < 1e-9) {
+  if (T === C.Tc && p === C.Pc) {
     throw new IF97Error(
       `solvePT does not support the exact critical point P=${C.Pc} MPa, T=${C.Tc} K because derivative properties become singular`,
     );

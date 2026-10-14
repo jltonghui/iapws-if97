@@ -10,6 +10,9 @@
 import { Tc, Pc, P_MIN } from '../constants.js';
 import { OutOfRangeError } from '../types.js';
 import {
+  addExtended, divideExtended, multiplyExtended, sqrtExtended, subtractExtended,
+} from '../solvers/extended-arithmetic.js';
+import {
   normalizeRegion4Pressure,
   normalizeRegion4Temperature,
 } from '../saturation/region4-boundaries.js';
@@ -39,18 +42,29 @@ const n = [
  * @throws {OutOfRangeError} if T is outside valid range
  */
 export function saturationPressure(T: number): number {
+  return normalizeRegion4Pressure(saturationPressurePair(T)[0]);
+}
+
+/** Internal unrounded target: near criticality, one pressure ULP changes endpoint density. */
+export function saturationPressurePair(T: number): readonly [number, number] {
   if (T < 273.15 || T > Tc) {
     throw new OutOfRangeError('Temperature', T, 273.15, Tc);
   }
 
-  const theta = T + n[9] / (T - n[10]);
-  const A = theta * theta + n[1] * theta + n[2];
-  const B = n[3] * theta * theta + n[4] * theta + n[5];
-  const C = n[6] * theta * theta + n[7] * theta + n[8];
-
-  return normalizeRegion4Pressure(
-    Math.pow(2 * C / (-B + Math.sqrt(B * B - 4 * A * C)), 4),
+  const theta = addExtended([T, 0], divideExtended([n[9], 0], subtractExtended([T, 0], [n[10], 0])));
+  const thetaSquared = multiplyExtended(theta, theta);
+  const A = addExtended(addExtended(thetaSquared, multiplyExtended([n[1], 0], theta)), [n[2], 0]);
+  const B = addExtended(addExtended(multiplyExtended([n[3], 0], thetaSquared), multiplyExtended([n[4], 0], theta)), [n[5], 0]);
+  const C = addExtended(addExtended(multiplyExtended([n[6], 0], thetaSquared), multiplyExtended([n[7], 0], theta)), [n[8], 0]);
+  const discriminant = subtractExtended(
+    multiplyExtended(B, B), multiplyExtended(multiplyExtended([4, 0], A), C),
   );
+  const root = divideExtended(
+    multiplyExtended([2, 0], C),
+    addExtended([-B[0], -B[1]], sqrtExtended(discriminant)),
+  );
+  const squared = multiplyExtended(root, root);
+  return multiplyExtended(squared, squared);
 }
 
 /**
@@ -68,15 +82,24 @@ export function saturationTemperature(p: number): number {
     throw new OutOfRangeError('Pressure', p, P_MIN, Pc);
   }
 
-  const beta = Math.pow(p, 0.25);
-  const E = beta * beta + n[3] * beta + n[6];
-  const F = n[1] * beta * beta + n[4] * beta + n[7];
-  const G = n[2] * beta * beta + n[5] * beta + n[8];
-  const D = 2 * G / (-F - Math.sqrt(F * F - 4 * E * G));
-
-  return normalizeRegion4Temperature(
-    (n[10] + D - Math.sqrt(
-      Math.pow(n[10] + D, 2) - 4 * (n[9] + n[10] * D),
-    )) / 2,
+  const beta = sqrtExtended(sqrtExtended([p, 0]));
+  const betaSquared = multiplyExtended(beta, beta);
+  const E = addExtended(addExtended(betaSquared, multiplyExtended([n[3], 0], beta)), [n[6], 0]);
+  const F = addExtended(addExtended(multiplyExtended([n[1], 0], betaSquared), multiplyExtended([n[4], 0], beta)), [n[7], 0]);
+  const G = addExtended(addExtended(multiplyExtended([n[2], 0], betaSquared), multiplyExtended([n[5], 0], beta)), [n[8], 0]);
+  const discriminant = subtractExtended(
+    multiplyExtended(F, F), multiplyExtended(multiplyExtended([4, 0], E), G),
   );
+  const D = divideExtended(
+    multiplyExtended([2, 0], G),
+    subtractExtended([-F[0], -F[1]], sqrtExtended(discriminant)),
+  );
+  const difference = subtractExtended([n[10], 0], D);
+  const temperature = divideExtended(
+    subtractExtended(addExtended([n[10], 0], D), sqrtExtended(
+      subtractExtended(multiplyExtended(difference, difference), [4 * n[9], 0]),
+    )),
+    [2, 0],
+  );
+  return normalizeRegion4Temperature(temperature[0]);
 }

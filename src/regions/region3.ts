@@ -10,6 +10,9 @@
 import { R } from '../constants.js';
 import type { BasicProperties, CoefficientTable } from '../types.js';
 import { IF97Error, Region } from '../types.js';
+import {
+  addExtended, divideExtended, multiplyExtended, type DoubleDouble,
+} from '../solvers/extended-arithmetic.js';
 
 // ─── Coefficient Table (Table 30, IAPWS-IF97) ──────────────────────────────
 
@@ -63,6 +66,42 @@ export const COEFFICIENTS: CoefficientTable = [
 const RHO_STAR = 322; // ρ* [kg/m³] (critical density)
 const T_STAR = 647.096; // T* [K] (critical temperature)
 
+function extendedPowers(value: DoubleDouble, degree: number): DoubleDouble[] {
+  const powers: DoubleDouble[] = [[1, 0]];
+  for (let i = 1; i <= degree; i += 1) {
+    powers.push(multiplyExtended(powers[i - 1], value));
+  }
+  return powers;
+}
+
+/** Evaluate rho*R*T*(n1 + sum(n*I*delta^I*tau^J))/1000 without losing its small residual. */
+function pressureExtended(rho: number, T: number): DoubleDouble {
+  const delta = extendedPowers(divideExtended([rho, 0], [RHO_STAR, 0]), 11);
+  const tau = extendedPowers(divideExtended([T_STAR, 0], [T, 0]), 26);
+  let polynomial: DoubleDouble = [COEFFICIENTS[0][2], 0];
+  for (let idx = 1; idx < COEFFICIENTS.length; idx += 1) {
+    const [I, J, N] = COEFFICIENTS[idx];
+    if (I === 0) continue;
+    const coefficient = multiplyExtended([N, 0], [I, 0]);
+    const term = multiplyExtended(multiplyExtended(coefficient, delta[I]), tau[J]);
+    polynomial = addExtended(polynomial, term);
+  }
+  const scale = multiplyExtended(multiplyExtended([rho, 0], [R, 0]), [T, 0]);
+  return divideExtended(multiplyExtended(scale, polynomial), [1000, 0]);
+}
+
+/** Internal pressure residual: near criticality, rounding pressure before subtraction hides real density error. */
+export function region3PressureResidual(
+  rho: number,
+  T: number,
+  pressure: number,
+  pressureLow = 0,
+): number {
+  const evaluated = pressureExtended(rho, T);
+  const residual = addExtended(evaluated, [-pressure, -pressureLow]);
+  return residual[0] + residual[1];
+}
+
 /**
  * Compute Region 3 thermodynamic properties from density and temperature.
  *
@@ -108,7 +147,7 @@ export function region3ByRhoT(rho: number, T: number): BasicProperties {
 
   return {
     region: Region.Region3,
-    pressure: rho * R * T * delta * phi_delta / 1000,
+    pressure: pressureExtended(rho, T)[0],
     temperature: T,
     specificVolume: v,
     internalEnergy: R * T * tau * phi_tau,

@@ -1,5 +1,9 @@
 import * as C from '../constants.js';
-import { detectRegionPT } from '../core/region-detector.js';
+import { detectRegionPT, nativeSaturationTemperatureBracket } from '../core/region-detector.js';
+import { solveRegion3PTBasic } from '../core/region3-pt.js';
+import { boundary23_T_to_P } from '../regions/boundaries.js';
+import { region2 } from '../regions/region2.js';
+import { region1 } from '../regions/region1.js';
 import { saturationPressure } from '../regions/region4.js';
 import type { BasicProperties } from '../types.js';
 import { IF97Error, Region } from '../types.js';
@@ -68,6 +72,60 @@ function normalizeComputedPT(state: BasicProperties): BasicProperties {
   return pressure === state.pressure && temperature === state.temperature
     ? state
     : { ...state, pressure, temperature };
+}
+
+function normalizeB23State(state: BasicProperties): BasicProperties {
+  if ((state.region !== Region.Region2 && state.region !== Region.Region3) ||
+      state.pressure <= C.B23_P_MIN || state.pressure > C.P_MAX ||
+      state.temperature <= C.R2_T_MIN || state.temperature >= C.B23_T_MAX ||
+      detectRegionPT(state.pressure, state.temperature) === state.region) {
+    return state;
+  }
+
+  // Invert the native pressure boundary, retaining its closed Region 3 side.
+  // The published inverse correlation can differ by several temperature ULPs.
+  let lower = C.R2_T_MIN;
+  let upper = C.B23_T_MAX;
+  while (true) {
+    const middle = (lower + upper) / 2;
+    if (middle === lower || middle === upper) break;
+    if (boundary23_T_to_P(middle) <= state.pressure) lower = middle;
+    else upper = middle;
+  }
+  const temperature = state.region === Region.Region3 ? lower : upper;
+  if (Math.abs(temperature - state.temperature) > boundaryTolerance(temperature, state.temperature)) {
+    return state;
+  }
+
+  return state.region === Region.Region3
+    ? solveRegion3PTBasic(state.pressure, temperature)
+    : region2(state.pressure, temperature);
+}
+
+function normalizeRegion3LowerState(state: BasicProperties): BasicProperties {
+  if (state.region !== Region.Region3 || !(state.temperature <= C.R2_T_MIN) ||
+      C.R2_T_MIN - state.temperature > boundaryTolerance(state.temperature, C.R2_T_MIN)) return state;
+  const view = new DataView(new ArrayBuffer(8));
+  view.setFloat64(0, C.R2_T_MIN);
+  view.setBigUint64(0, view.getBigUint64(0) + 1n);
+  return solveRegion3PTBasic(state.pressure, view.getFloat64(0));
+}
+
+function normalizeSaturationState(state: BasicProperties): BasicProperties {
+  if ((state.region !== Region.Region1 && state.region !== Region.Region2) ||
+      state.pressure > saturationPressure(C.R2_T_MIN) ||
+      state.temperature < C.T_MIN || state.temperature > C.R2_T_MIN ||
+      detectRegionPT(state.pressure, state.temperature) === state.region) {
+    return state;
+  }
+  const [liquidT, vaporT] = nativeSaturationTemperatureBracket(state.pressure);
+  const temperature = state.region === Region.Region1 ? liquidT : vaporT;
+  if (Math.abs(temperature - state.temperature) > boundaryTolerance(temperature, state.temperature)) {
+    return state;
+  }
+  return state.region === Region.Region1
+    ? region1(state.pressure, temperature)
+    : region2(state.pressure, temperature);
 }
 
 function validateBasicEnvelope(state: BasicProperties, solverName: string): void {
@@ -159,9 +217,30 @@ export function validateBackwardState(
   constraints: readonly BackwardConstraint[],
   options: BackwardValidationOptions,
 ): BasicProperties {
-  const normalized = normalizeComputedPT(state);
+  validateConstraints(state, constraints, options.solverName);
+  const exactPT = withExactConstraints(
+    state,
+    constraints.filter(({ label }) => label === 'pressure' || label === 'temperature'),
+  );
+  const computed = normalizeComputedPT(exactPT);
+  const normalized = constraints.some(({ label }) => label === 'temperature')
+    ? computed
+    : normalizeSaturationState(normalizeB23State(normalizeRegion3LowerState(computed)));
   validateBasicEnvelope(normalized, options.solverName);
   validateRegionConsistency(normalized, options.solverName, options.expectedRegion);
   validateConstraints(normalized, constraints, options.solverName);
   return withExactConstraints(normalized, constraints);
+}
+
+export function validateRegion3PTReconstruction(state: BasicProperties, solverName: string): BasicProperties {
+  return validateBackwardState(
+    solveRegion3PTBasic(state.pressure, state.temperature),
+    [
+      { label: 'pressure', expected: state.pressure },
+      { label: 'temperature', expected: state.temperature },
+      { label: 'enthalpy', expected: state.enthalpy },
+      { label: 'entropy', expected: state.entropy },
+    ],
+    { solverName, expectedRegion: Region.Region3 },
+  );
 }

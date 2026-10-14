@@ -10,26 +10,23 @@ import {
   Tc,
 } from '../../src/constants.js';
 import { IF97Error } from '../../src/types.js';
-import { expectDigitsClose } from '../helpers/assertions.js';
 
 describe('saturation quality calculation', () => {
-  it('preserves midpoint quality just below the subcritical safety margin', () => {
+  it('recovers midpoint quality from a valid near-critical pair', () => {
+    const endpoints = saturationEndpointsAtPressure(22.06399);
+
+    for (const property of ['enthalpy', 'entropy'] as const) {
+      const liquid = endpoints.liquid[property];
+      const vapor = endpoints.vapor[property];
+      const midpoint = (liquid + vapor) / 2;
+      expect(qualityFromSaturationProperty(liquid, vapor, midpoint)).toBeCloseTo(0.5, 10);
+    }
+  });
+
+  it('rejects nonphysical EOS phases just below the subcritical safety margin', () => {
     const temperature = Tc - REGION4_SUBCRITICAL_TEMPERATURE_MARGIN;
-    const endpoints = saturationEndpointsAtTemperature(temperature);
-
-    const enthalpyQuality = qualityFromSaturationProperty(
-      endpoints.liquid.enthalpy,
-      endpoints.vapor.enthalpy,
-      (endpoints.liquid.enthalpy + endpoints.vapor.enthalpy) / 2,
-    );
-    const entropyQuality = qualityFromSaturationProperty(
-      endpoints.liquid.entropy,
-      endpoints.vapor.entropy,
-      (endpoints.liquid.entropy + endpoints.vapor.entropy) / 2,
-    );
-
-    expectDigitsClose(enthalpyQuality, 0.5, 6);
-    expectDigitsClose(entropyQuality, 0.5, 6);
+    expect(() => saturationEndpointsAtTemperature(temperature)).toThrow(IF97Error);
+    expect(() => saturationEndpointsAtTemperature(temperature)).toThrow(/numerical.*inconsisten/i);
   });
 
   it('throws when temperature-side normalization collapses saturation endpoints at the critical point', () => {

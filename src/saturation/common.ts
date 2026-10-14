@@ -7,11 +7,11 @@
  */
 import type { BasicProperties } from '../types.js';
 import { IF97Error, Region } from '../types.js';
-import { Pc, R2_T_MIN, RHOc, Tt } from '../constants.js';
+import { Pc, Pt, R2_T_MIN, RHOc, Tt } from '../constants.js';
 import { region1 } from '../regions/region1.js';
 import { region2 } from '../regions/region2.js';
 import { region3ByRhoT } from '../regions/region3.js';
-import { saturationPressure, saturationTemperature } from '../regions/region4.js';
+import { saturationPressure, saturationPressurePair, saturationTemperature } from '../regions/region4.js';
 import { region3SatVolume } from '../regions/region3-subregions.js';
 import { solveRegion3StateAtPressure } from '../core/region3-pt.js';
 import {
@@ -27,6 +27,8 @@ export interface SaturationEndpoints {
   vapor: BasicProperties;
 }
 
+const REGION12_SATURATION_PRESSURE = saturationPressure(R2_T_MIN);
+
 /** Tag a single-phase state as Region 4 with the given vapour quality. */
 function withRegion4Metadata(state: BasicProperties, quality: number): BasicProperties {
   return { ...state, region: Region.Region4, quality };
@@ -39,8 +41,8 @@ function withRegion4Metadata(state: BasicProperties, quality: number): BasicProp
  * @param T - Saturation temperature [K]
  * @param x - Phase indicator: 0 = liquid, 1 = vapour
  */
-function solveR3Endpoint(p: number, T: number, x: 0 | 1): BasicProperties {
-  return solveRegion3StateAtPressure(p, T, 1 / region3SatVolume(p, T, x));
+function solveR3Endpoint(p: number, T: number, x: 0 | 1, pressureLow: number): BasicProperties {
+  return solveRegion3StateAtPressure(p, T, 1 / region3SatVolume(p, T, x), pressureLow);
 }
 
 /** Clamp vapour quality to [0, 1], snapping near-zero/one values to the boundary. */
@@ -76,6 +78,46 @@ export function rawQualityFromSaturationProperty(
   return (mixtureValue - liquidValue) / span;
 }
 
+function buildSaturationEndpoints(pressure: number, temperature: number): SaturationEndpoints {
+  // Both caller coordinates must use the same native saturation EOS pair.
+  const pressurePair = saturationPressurePair(temperature);
+  const eosPressure = normalizeRegion4Pressure(pressurePair[0]);
+  const pressureLow = eosPressure === pressurePair[0] ? pressurePair[1] : 0;
+  let liquid: BasicProperties;
+  let vapor: BasicProperties;
+  if (pressure === Pc) {
+    liquid = vapor = region3ByRhoT(RHOc, temperature);
+  } else if (pressure > REGION12_SATURATION_PRESSURE) {
+    // Inverse-temperature rounding must not change formula ownership at 623.15 K.
+    const inconsistency = `Region 4 numerical inconsistency at p=${pressure} MPa, T=${temperature} K: cannot construct distinct stable liquid and vapor EOS endpoints`;
+    try {
+      liquid = solveR3Endpoint(eosPressure, temperature, 0, pressureLow);
+      vapor = solveR3Endpoint(eosPressure, temperature, 1, pressureLow);
+    } catch (error) {
+      if (!(error instanceof IF97Error)) throw error;
+      throw new IF97Error(`${inconsistency}: ${error.message}`);
+    }
+    if (!(1 / liquid.specificVolume > RHOc && 1 / vapor.specificVolume < RHOc &&
+        vapor.specificVolume > liquid.specificVolume && vapor.enthalpy > liquid.enthalpy &&
+        vapor.entropy > liquid.entropy && [liquid, vapor].every((state) =>
+          Number.isFinite(state.pressure) && Math.abs(state.pressure - pressure) / pressure <= 1e-6 &&
+          [state.cp, state.cv, state.isothermalCompressibility, state.speedOfSound]
+            .every((value) => value !== null && Number.isFinite(value) && value > 0)))) {
+      throw new IF97Error(inconsistency);
+    }
+  } else {
+    liquid = region1(eosPressure, temperature);
+    vapor = region2(eosPressure, temperature);
+  }
+
+  return {
+    pressure,
+    temperature,
+    liquid: { ...liquid, pressure, temperature },
+    vapor: { ...vapor, pressure, temperature },
+  };
+}
+
 /**
  * Compute saturated liquid and vapour properties at a given pressure.
  *
@@ -86,28 +128,18 @@ export function rawQualityFromSaturationProperty(
  */
 export function saturationEndpointsAtPressure(p: number): SaturationEndpoints {
   const pressure = normalizeRegion4Pressure(p);
-  const temperature = normalizeRegion4Temperature(saturationTemperature(pressure));
-
-  if (pressure === Pc) {
-    const state = region3ByRhoT(RHOc, temperature);
-    return { pressure, temperature, liquid: state, vapor: state };
+  let temperature = pressure === REGION12_SATURATION_PRESSURE
+    ? R2_T_MIN
+    : normalizeRegion4Temperature(saturationTemperature(pressure));
+  if ((pressure > REGION12_SATURATION_PRESSURE && temperature <= R2_T_MIN) ||
+      (pressure < REGION12_SATURATION_PRESSURE && temperature >= R2_T_MIN)) {
+    // Keep a rounded derived temperature on the pressure's formula side.
+    const view = new DataView(new ArrayBuffer(8));
+    view.setFloat64(0, R2_T_MIN);
+    view.setBigUint64(0, view.getBigUint64(0) + (pressure > REGION12_SATURATION_PRESSURE ? 1n : -1n));
+    temperature = view.getFloat64(0);
   }
-
-  if (temperature > R2_T_MIN) {
-    return {
-      pressure,
-      temperature,
-      liquid: solveR3Endpoint(pressure, temperature, 0),
-      vapor: solveR3Endpoint(pressure, temperature, 1),
-    };
-  }
-
-  return {
-    pressure,
-    temperature,
-    liquid: region1(pressure, temperature),
-    vapor: region2(pressure, temperature),
-  };
+  return buildSaturationEndpoints(pressure, temperature);
 }
 
 /**
@@ -115,19 +147,12 @@ export function saturationEndpointsAtPressure(p: number): SaturationEndpoints {
  * @param T - Saturation temperature [K]
  */
 export function saturationEndpointsAtTemperature(T: number): SaturationEndpoints {
-  const temperature = normalizeRegion4Temperature(T);
-  const pressure = normalizeRegion4Pressure(saturationPressure(temperature));
-
-  if (temperature < Tt) {
-    return {
-      pressure,
-      temperature,
-      liquid: region1(pressure, temperature),
-      vapor: region2(pressure, temperature),
-    };
-  }
-
-  return saturationEndpointsAtPressure(pressure);
+  const inputTemperature = normalizeRegion4Temperature(T);
+  const pressure = normalizeRegion4Pressure(saturationPressure(inputTemperature));
+  const temperature = inputTemperature >= Tt && (pressure === Pt || pressure === Pc)
+    ? normalizeRegion4Temperature(saturationTemperature(pressure))
+    : inputTemperature;
+  return buildSaturationEndpoints(pressure, temperature);
 }
 
 /**

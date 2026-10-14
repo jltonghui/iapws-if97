@@ -1,10 +1,28 @@
 import { describe, expect, it } from 'vitest';
-import { AmbiguousStateError, IF97Error, Region, solve, solvePT, solveTS, solveTx } from '../../src/index.js';
+import { AmbiguousStateError, IF97Error, Region, solve, solvePT, solvePx, solveTS, solveTx } from '../../src/index.js';
 import { detectRegionTS } from '../../src/detect.js';
 import { saturationPressure } from '../../src/saturation.js';
+import { boundary23_T_to_P } from '../../src/boundaries.js';
+import { region2 } from '../../src/regions.js';
 import { expectBackwardValue, expectRegion4RoundTrip } from '../helpers/backward-assertions.js';
 
 describe('TS uniqueness', () => {
+  it.each([
+    [22.054, 1],
+    [22.063, 1 - 1e-9],
+    [22.063, 1],
+  ])('preserves the pressure-family vapor endpoint at p=%s, x=%s', (pressure, quality) => {
+    const forward = solvePx(pressure, quality);
+    const recovered = solveTS(forward.temperature, forward.entropy);
+
+    expect(recovered.region).toBe(Region.Region4);
+    expect(recovered.quality).not.toBeNull();
+    expect(Math.abs(recovered.quality! - quality)).toBeLessThan(1e-8);
+    expect(Math.abs(recovered.entropy - forward.entropy)).toBeLessThanOrEqual(1e-12);
+    expect(recovered.temperature).toBe(forward.temperature);
+    expectBackwardValue(recovered.pressure, forward.pressure, 'pressure', 1e-9);
+  });
+
   it('rejects two liquid roots and a wet state through every public TS entry point', () => {
     const T = 274.15;
     const first = solvePT(1, T);
@@ -41,6 +59,51 @@ describe('TS uniqueness', () => {
 
     expect(() => solveTS(T, first.entropy)).toThrow(AmbiguousStateError);
     expect(() => detectRegionTS(T, first.entropy)).toThrow(AmbiguousStateError);
+  });
+
+  it('counts the liquid root immediately inside an excluded saturation endpoint', () => {
+    const forward = solvePT(0.0006116125558738073, 273.159);
+    expect(forward.region).toBe(Region.Region1);
+    expect(() => solveTS(forward.temperature, forward.entropy)).toThrow(AmbiguousStateError);
+    expect(() => detectRegionTS(forward.temperature, forward.entropy)).toThrow(AmbiguousStateError);
+  });
+
+  it('recovers a vapor whose entropy rounds to an excluded endpoint value', () => {
+    const T = 273.159;
+    const forward = solvePT(saturationPressure(T) * (1 - Number.EPSILON), T);
+    const recovered = solveTS(T, forward.entropy);
+
+    expect(forward.region).toBe(Region.Region2);
+    expect(recovered.region).toBe(forward.region);
+    expect(recovered.pressure).toBeLessThan(saturationPressure(T));
+    expect(recovered.entropy).toBe(forward.entropy);
+    expectBackwardValue(solvePT(recovered.pressure, T).entropy, forward.entropy, 'entropy');
+  });
+
+  it.each([700, 850])('recovers an exact floating endpoint match at B23, T=%s K', (T) => {
+    const boundary = boundary23_T_to_P(T);
+    const bits = new DataView(new ArrayBuffer(8));
+    bits.setFloat64(0, boundary);
+    bits.setBigUint64(0, bits.getBigUint64(0) - 1n);
+    const forward = solvePT(bits.getFloat64(0), T);
+    const recovered = solveTS(T, forward.entropy);
+
+    expect(forward.region).toBe(Region.Region2);
+    expect(recovered.region).toBe(forward.region);
+    expect(recovered.pressure).toBeLessThan(boundary);
+    expect(recovered.entropy).toBe(forward.entropy);
+  });
+
+  it.each([650, 700])('keeps a root just inside an open B23 endpoint at T=%s K', (T) => {
+    const s = region2(boundary23_T_to_P(T), T).entropy + 5e-13;
+    if (T === 650) {
+      expect(() => solveTS(T, s)).toThrow(AmbiguousStateError);
+    } else {
+      const recovered = solveTS(T, s);
+      expect(recovered.region).toBe(Region.Region2);
+      expect(recovered.entropy).toBe(s);
+      expectBackwardValue(solvePT(recovered.pressure, T).entropy, s, 'entropy');
+    }
   });
 
   it('preserves the unique tangent root below the triple point', () => {
@@ -131,14 +194,29 @@ describe('TS uniqueness', () => {
     expect(detectRegionTS(saturated.temperature, saturated.entropy)).toBe(Region.Region4);
   });
 
-  it('recovers a near-critical PT state without substituting a saturation endpoint', () => {
+  it('counts a near-critical PT liquid and its shared saturation endpoint as one state', () => {
     const T = 647.0949;
     const forward = solvePT(saturationPressure(T), T);
     const recovered = solveTS(T, forward.entropy);
 
-    expect(recovered.region).toBe(forward.region);
+    expect(recovered.region).toBe(Region.Region4);
+    expect(recovered.quality).toBe(0);
     expectBackwardValue(recovered.pressure, forward.pressure, 'pressure');
     expect(recovered.temperature).toBe(T);
+    expect(recovered.entropy).toBe(forward.entropy);
+    expectBackwardValue(solvePT(recovered.pressure, T).entropy, forward.entropy, 'entropy');
+  });
+
+  it('recovers a near-critical liquid state outside the endpoint matching tolerance', () => {
+    const T = 647.0949;
+    const forward = solvePT(saturationPressure(T) + 1e-6, T);
+    const saturated = solveTx(T, 0);
+    expect(Math.abs(forward.entropy - saturated.entropy)).toBeGreaterThan(1e-9);
+
+    const recovered = solveTS(T, forward.entropy);
+    expect(recovered.region).toBe(Region.Region3);
+    expect(recovered.density).toBeGreaterThan(322);
+    expectBackwardValue(recovered.pressure, forward.pressure, 'pressure');
     expect(recovered.entropy).toBe(forward.entropy);
     expectBackwardValue(solvePT(recovered.pressure, T).entropy, forward.entropy, 'entropy');
   });

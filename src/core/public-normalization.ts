@@ -1,4 +1,8 @@
 import type { BasicProperties, SteamState } from '../types.js';
+import { Region } from '../types.js';
+import { Pc, R2_T_MIN, Tc } from '../constants.js';
+import { saturationPressure } from '../regions/region4.js';
+import { detectRegionPT } from './region-detector.js';
 
 // Only snap values that are effectively simple decimals plus machine-noise.
 const SIMPLE_DECIMAL_PLACES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
@@ -31,10 +35,28 @@ function normalizeNullableNumber(value: number | null): number | null {
 }
 
 function normalizeBasicProperties(state: BasicProperties): BasicProperties {
+  let pressure = snapSimpleDecimal(state.pressure);
+  let temperature = snapSimpleDecimal(state.temperature);
+  const changesRegion = state.region !== Region.Region4 &&
+    detectRegionPT(pressure, temperature) !== detectRegionPT(state.pressure, state.temperature);
+  const changesPhase = state.region === Region.Region3 && (
+    (temperature < Tc) !== (state.temperature < Tc) ||
+    (temperature < Tc && state.temperature < Tc &&
+      (pressure >= saturationPressure(temperature)) !==
+      (state.pressure >= saturationPressure(state.temperature)))
+  );
+  const changesSaturationEquation = state.region === Region.Region4 &&
+    (temperature <= R2_T_MIN) !== (state.temperature <= R2_T_MIN);
+  const createsCriticalPoint = pressure === Pc && temperature === Tc &&
+    (state.pressure !== Pc || state.temperature !== Tc);
+  if (changesRegion || changesPhase || changesSaturationEquation || createsCriticalPoint) {
+    pressure = state.pressure;
+    temperature = state.temperature;
+  }
   return {
     region: state.region,
-    pressure: snapSimpleDecimal(state.pressure),
-    temperature: snapSimpleDecimal(state.temperature),
+    pressure,
+    temperature,
     specificVolume: snapSimpleDecimal(state.specificVolume),
     internalEnergy: snapSimpleDecimal(state.internalEnergy),
     entropy: snapSimpleDecimal(state.entropy),

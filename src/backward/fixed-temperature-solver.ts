@@ -36,8 +36,8 @@ function pressureDerivative(
  * Solve for pressure at fixed temperature by matching a target property value.
  *
  * Evaluates the region equation at the bracket endpoints first (short-circuit
- * if either already matches), then runs a bracketed Newton iteration driven by
- * the analytic pressure derivative (density derivative for Region 3 entropy).
+ * if an included endpoint matches), then runs a bracketed Newton iteration driven by
+ * the analytic pressure derivative (density derivative for Region 3).
  *
  * @param evaluator  - Region-specific equation returning BasicProperties from (p, T)
  * @param T          - Fixed temperature [K]
@@ -55,11 +55,13 @@ export function solveFixedTemperaturePressure(
   upper: number,
   property: FixedTemperatureProperty,
   solverName: string,
+  includeLower = true,
+  includeUpper = true,
 ): BasicProperties {
   const lowerState = evaluator(lower, T);
   const upperState = evaluator(upper, T);
-  const useDensity = lowerState.region === Region.Region3 && property === 'entropy';
-  // Density bounds keep Region 3 entropy iteration on the same saturation branch.
+  const useDensity = lowerState.region === Region.Region3;
+  // Density bounds keep Region 3 iteration on the same saturation branch.
   const lowerBound = useDensity ? 1 / lowerState.specificVolume : lower;
   const upperBound = useDensity ? 1 / upperState.specificVolume : upper;
 
@@ -76,23 +78,26 @@ export function solveFixedTemperaturePressure(
   };
 
   const rootTolerance = property === 'enthalpy' ? 1e-9 : 1e-12;
-  if (Math.abs(propertyValue(lowerState, property) - target) <= rootTolerance) return lowerState;
-  if (Math.abs(propertyValue(upperState, property) - target) <= rootTolerance) return upperState;
+  if (includeLower && Math.abs(propertyValue(lowerState, property) - target) <= rootTolerance) return lowerState;
+  if (includeUpper && Math.abs(propertyValue(upperState, property) - target) <= rootTolerance) return upperState;
+  // Resolve open endpoints below their matching tolerance instead of snapping to them.
+  const residualScale = includeLower && includeUpper ? 1 : rootTolerance;
 
   const root = bracketedNewton(
-    (input) => propertyValue(stateAt(input), property) - target,
+    (input) => (propertyValue(stateAt(input), property) - target) / residualScale,
     lowerBound,
     upperBound,
     (lowerBound + upperBound) / 2,
     {
       derivative: (input) => {
         if (useDensity) {
-          return helmholtzPropertyDerivatives(stateAt(input), input).dsDrho;
+          const derivatives = helmholtzPropertyDerivatives(stateAt(input), input);
+          return (property === 'enthalpy' ? derivatives.dhDrho : derivatives.dsDrho) / residualScale;
         }
-        return pressureDerivative(stateAt(input), property);
+        return pressureDerivative(stateAt(input), property) / residualScale;
       },
       // Near-critical properties need a tighter bracket before termination.
-      tolerance: 1e-12,
+      tolerance: residualScale === 1 ? 1e-12 : Number.EPSILON,
     },
   );
 

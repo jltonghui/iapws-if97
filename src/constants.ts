@@ -70,17 +70,17 @@ export const T_MIN = 273.15;
 /** Maximum temperature [K] (2273.15 K = 2000 °C) */
 export const T_MAX = 2273.15;
 
-/** Minimum specific entropy [kJ/(kg·K)] */
-export const S_MIN = -0.00015454959194;
+/** Minimum specific entropy [kJ/(kg·K)], at T_MIN and P_MAX in Region 1. */
+export const S_MIN = -0.00858228709261889;
 
-/** Maximum specific entropy [kJ/(kg·K)] */
-export const S_MAX = 13.904956083429227;
+/** Maximum specific entropy [kJ/(kg·K)], at T_MAX and P_MIN in Region 5. */
+export const S_MAX = 13.904956083429228;
 
-/** Minimum specific enthalpy [kJ/kg] */
-export const H_MIN = -0.041587825987;
+/** Minimum specific enthalpy [kJ/kg], at T_MIN and P_MIN in Region 1. */
+export const H_MIN = -0.041587825987655716;
 
-/** Maximum specific enthalpy [kJ/kg] */
-export const H_MAX = 7376.980263598506;
+/** Maximum specific enthalpy [kJ/kg], at T_MAX and P_MIN in Region 5. */
+export const H_MAX = 7376.980263598508;
 
 // ─── Region 2 Boundaries ───────────────────────────────────────────────────
 

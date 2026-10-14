@@ -240,25 +240,7 @@ function solveRegion3HS(h: number, s: number, rho0: number, T0: number): BasicPr
 
 // ─── Main HS Solver ─────────────────────────────────────────────────────────
 
-/**
- * Solve for thermodynamic state given H and S.
- * @param h - Specific enthalpy [kJ/kg]
- * @param s - Specific entropy [kJ/(kg·K)]
- */
-export function solveHS(h: number, s: number): BasicProperties {
-  assertFiniteNumber('Enthalpy', h);
-  assertFiniteNumber('Entropy', s);
-
-  if (h < C.H_MIN || h > C.H_MAX) {
-    throw new OutOfRangeError('Enthalpy', h, C.H_MIN, C.H_MAX);
-  }
-  if (s < C.S_MIN || s > C.S_MAX) {
-    throw new OutOfRangeError('Entropy', s, C.S_MIN, C.S_MAX);
-  }
-  assertCriticalRegion4HSInput(h, s, 'solveHS');
-
-  const region = detectRegionHS(h, s);
-
+function solveHSInRegion(h: number, s: number, region: Region | -1): BasicProperties {
   switch (region) {
     case Region.Region1: {
       const P0 = r1Phs(h, s);
@@ -273,7 +255,7 @@ export function solveHS(h: number, s: number): BasicProperties {
       );
     }
     case Region.Region2: {
-      const P0 = r2Phs(h, s);
+      const P0 = Math.max(C.P_MIN, Math.min(C.P_MAX, r2Phs(h, s)));
       const state = solveGibbsHS(h, s, [P0, r2BackwardT(P0, h)], region2);
       return validateBackwardState(
         state,
@@ -324,5 +306,43 @@ export function solveHS(h: number, s: number): BasicProperties {
     }
     default:
       throw new IF97Error(`Cannot determine region for h=${h} kJ/kg, s=${s} kJ/(kg·K)`);
+  }
+}
+
+/**
+ * Solve for thermodynamic state given H and S.
+ * @param h - Specific enthalpy [kJ/kg]
+ * @param s - Specific entropy [kJ/(kg·K)]
+ */
+export function solveHS(h: number, s: number): BasicProperties {
+  assertFiniteNumber('Enthalpy', h);
+  assertFiniteNumber('Entropy', s);
+
+  if (h < C.H_MIN || h > C.H_MAX) {
+    throw new OutOfRangeError('Enthalpy', h, C.H_MIN, C.H_MAX);
+  }
+  if (s < C.S_MIN || s > C.S_MAX) {
+    throw new OutOfRangeError('Entropy', s, C.S_MIN, C.S_MAX);
+  }
+  assertCriticalRegion4HSInput(h, s, 'solveHS');
+
+  const region = detectRegionHS(h, s);
+  try {
+    return solveHSInRegion(h, s, region);
+  } catch (error) {
+    if (!(error instanceof IF97Error)) throw error;
+    const mismatch = /^solveHS produced a PT state in Region ([123]), not Region ([123])$/.exec(error.message);
+    if (mismatch === null || Number(mismatch[2]) !== region) throw error;
+    const adjacent = Number(mismatch[1]) as Region;
+    if (!(adjacent === Region.Region3 && (region === Region.Region1 || region === Region.Region2)) &&
+        !(region === Region.Region3 && (adjacent === Region.Region1 || adjacent === Region.Region2))) {
+      throw error;
+    }
+    try {
+      return solveHSInRegion(h, s, adjacent);
+    } catch (alternateError) {
+      if (!(alternateError instanceof IF97Error)) throw alternateError;
+      throw error;
+    }
   }
 }

@@ -6,6 +6,7 @@ import {
   tryRegion4HSState,
 } from '../../src/saturation/region4-hs.js';
 import { solveTx } from '../../src/saturation/two-phase.js';
+import { IF97Error } from '../../src/types.js';
 import { expectRegion4RoundTrip } from '../helpers/backward-assertions.js';
 
 describe('Region 4 backward T(h,s)', () => {
@@ -78,9 +79,6 @@ describe('Region 4 backward T(h,s)', () => {
   it.each([
     { delta: 1e-4 },
     { delta: 4.9e-5 },
-    { delta: 1e-5 },
-    { delta: 4e-6 },
-    { delta: 2e-8 },
   ])(
     'round-trips a valid state $delta K below the critical point',
     ({ delta }) => {
@@ -93,6 +91,14 @@ describe('Region 4 backward T(h,s)', () => {
         temperatureTolerance: 1e-6,
         qualityTolerance: 1e-4,
       });
+    },
+  );
+
+  it.each([1e-5, 4e-6, 2e-8])(
+    'rejects unavailable EOS phases %s K below the critical point',
+    (delta) => {
+      expect(() => solveTx(Tc - delta, 0.5)).toThrow(IF97Error);
+      expect(() => solveTx(Tc - delta, 0.5)).toThrow(/numerical.*inconsisten/i);
     },
   );
 });

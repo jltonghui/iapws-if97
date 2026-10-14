@@ -1,9 +1,8 @@
 import * as C from '../constants.js';
 import { solveRegion3PTBasic } from '../core/region3-pt.js';
-import { boundary23_P_to_T, boundary23_T_to_P } from '../regions/boundaries.js';
+import { boundary23_T_to_P } from '../regions/boundaries.js';
 import { region1 } from '../regions/region1.js';
 import { region2 } from '../regions/region2.js';
-import { saturationTemperature } from '../regions/region4.js';
 import { region5 } from '../regions/region5.js';
 import {
   mixSaturationState,
@@ -28,13 +27,13 @@ export function uniqueFixedTemperatureState(
   const solverName = property === 'enthalpy' ? 'solveTH' : 'solveTS';
   const rootTolerance = property === 'enthalpy' ? 1e-9 : 1e-12;
   const candidates: BasicProperties[] = [];
+  const sameState = (first: BasicProperties, second: BasicProperties): boolean =>
+    Math.abs(first.pressure - second.pressure) <= 1e-9 * Math.max(1, Math.abs(second.pressure)) &&
+    Math.abs(first.specificVolume - second.specificVolume) <=
+      1e-9 * Math.max(first.specificVolume, second.specificVolume);
   const add = (state: BasicProperties): void => {
     // The same saturation endpoint or stationary point can bound two intervals.
-    if (!candidates.some((other) =>
-      Math.abs(other.pressure - state.pressure) <= 1e-9 * Math.max(1, Math.abs(state.pressure)) &&
-      Math.abs(other.specificVolume - state.specificVolume) <=
-        1e-9 * Math.max(other.specificVolume, state.specificVolume)
-    )) {
+    if (!candidates.some((other) => sameState(other, state))) {
       candidates.push(state);
     }
   };
@@ -63,18 +62,34 @@ export function uniqueFixedTemperatureState(
     for (let i = 0; i < points.length; i++) {
       const current = points[i];
       const residual = current[property] - target;
-      if (Math.abs(residual) <= rootTolerance) {
-        if ((i > 0 || includeLower) && (i < points.length - 1 || includeUpper)) add(current);
+      const currentIncluded = (i > 0 || includeLower) && (i < points.length - 1 || includeUpper);
+      const currentMatches = Math.abs(residual) <= rootTolerance &&
+        (currentIncluded || candidates.some((other) => sameState(other, current)));
+      if (currentMatches && currentIncluded) add(current);
+      if (!currentIncluded && Math.abs(residual) <= rootTolerance && !currentMatches) {
+        // The closest admissible float is the endpoint of the supported pressure domain.
+        const bits = new DataView(new ArrayBuffer(8));
+        bits.setFloat64(0, current.pressure);
+        bits.setBigUint64(0, bits.getBigUint64(0) + (i === 0 ? 1n : -1n));
+        const pressure = bits.getFloat64(0);
+        if (pressure > lower.pressure && pressure < upper.pressure) {
+          const interior = stateAt(pressure, T);
+          if (Math.abs(interior[property] - target) <= rootTolerance) add(interior);
+        }
       }
       if (i === 0) continue;
       const previous = points[i - 1];
       const previousResidual = previous[property] - target;
-      if (Math.abs(residual) <= rootTolerance ||
-          Math.abs(previousResidual) <= rootTolerance ||
+      const previousIncluded = i > 1 || includeLower;
+      const previousMatches = Math.abs(previousResidual) <= rootTolerance &&
+        (previousIncluded || candidates.some((other) => sameState(other, previous)));
+      // An excluded endpoint cannot hide a root just inside its open interval.
+      if (currentMatches || previousMatches ||
           previousResidual * residual >= 0) continue;
 
       add(solveFixedTemperaturePressure(
         stateAt, T, target, previous.pressure, current.pressure, property, solverName,
+        previousIncluded, currentIncluded,
       ));
     }
   };
@@ -85,11 +100,10 @@ export function uniqueFixedTemperatureState(
     addInterval(region2, region2(C.P_MIN, T), region2(C.P_MAX, T));
   } else if (T >= C.Tc) {
     const p23 = Math.min(C.P_MAX, boundary23_T_to_P(T));
-    const boundaryInRegion3 = T < boundary23_P_to_T(p23);
-    addInterval(region2, region2(C.P_MIN, T), region2(p23, T), true, !boundaryInRegion3);
+    addInterval(region2, region2(C.P_MIN, T), region2(p23, T), true, false);
     addInterval(solveRegion3PTBasic,
       { ...solveRegion3PTBasic(p23, T), pressure: p23 },
-      solveRegion3PTBasic(C.P_MAX, T), boundaryInRegion3);
+      solveRegion3PTBasic(C.P_MAX, T));
   } else {
     const endpoints = saturationEndpointsAtTemperature(T);
     if (T >= C.Tt &&
@@ -101,17 +115,15 @@ export function uniqueFixedTemperatureState(
     }
 
     if (T <= C.R2_T_MIN) {
-      const boundaryInLiquid = T <= saturationTemperature(endpoints.pressure);
-      addInterval(region1, region1(endpoints.pressure, T), region1(C.P_MAX, T), boundaryInLiquid);
+      addInterval(region1, region1(endpoints.pressure, T), region1(C.P_MAX, T));
       addInterval(region2, region2(C.P_MIN, T), region2(endpoints.pressure, T),
-        true, T < C.Tt && !boundaryInLiquid);
+        true, false);
     } else {
       const p23 = boundary23_T_to_P(T);
-      const boundaryInRegion3 = T < boundary23_P_to_T(p23);
-      addInterval(region2, region2(C.P_MIN, T), region2(p23, T), true, !boundaryInRegion3);
+      addInterval(region2, region2(C.P_MIN, T), region2(p23, T), true, false);
       // Keep the vapor and liquid Region 3 branches separate at saturation.
       addInterval(solveRegion3PTBasic,
-        { ...solveRegion3PTBasic(p23, T), pressure: p23 }, endpoints.vapor, boundaryInRegion3);
+        { ...solveRegion3PTBasic(p23, T), pressure: p23 }, endpoints.vapor);
       addInterval(solveRegion3PTBasic, endpoints.liquid, solveRegion3PTBasic(C.P_MAX, T));
     }
   }

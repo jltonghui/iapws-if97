@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { solvePx } from '../../src/index.js';
 import { evalSubregion } from '../../src/regions/region3-eval.js';
-import { saturationTemperature } from '../../src/regions/region4.js';
+import { saturationPressure, saturationTemperature } from '../../src/regions/region4.js';
 import { REGION3_SUBREGIONS } from '../../src/regions/region3-data.js';
 import { region3ByRhoT } from '../../src/regions/region3.js';
 import { region3SatVolume, region3Volume } from '../../src/regions/region3-subregions.js';
@@ -129,12 +129,18 @@ describe('Region 3 subregion dispatch', () => {
     }
   });
 
-  it('uses the same liquid-side C/S threshold in saturation and PT dispatchers', () => {
-    const p = 19.00881189173929;
-    const T = saturationTemperature(p);
-    const expected = evalSubregion(REGION3_SUBREGIONS.S, p, T);
+  // Adjacent temperatures bracket the 100-digit inverse at the calibrated
+  // C/S pressure 19.00881189173929 MPa.
+  it.each([
+    { side: 'C', T: 634.6593786039792, subregion: REGION3_SUBREGIONS.C, volume: 0.0019263090209062218 },
+    { side: 'S', T: 634.6593786039793, subregion: REGION3_SUBREGIONS.S, volume: 0.0019263090209060564 },
+  ])('uses the same native liquid-side $side correlation in saturation and PT dispatchers', ({ side, T, subregion, volume }) => {
+    const p = saturationPressure(T);
+    const expected = evalSubregion(subregion, p, T);
 
+    expect(p >= 19.00881189173929).toBe(side === 'S');
     expect(region3SatVolume(p, T, 0)).toBe(expected);
     expect(region3Volume(p, T)).toBe(expected);
+    expectDigitsClose(expected, volume, 10);
   });
 });

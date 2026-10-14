@@ -14,6 +14,7 @@ import { region5 } from '../regions/region5.js';
 import { assertFiniteNumber } from '../core/input-validation.js';
 import { detectRegionPS } from '../core/region-detector.js';
 import { newtonRaphson } from '../solvers/newton-raphson.js';
+import { bracketedNewton } from '../solvers/bracketed-newton.js';
 import { dampedNewton2D } from '../solvers/damped-newton-2d.js';
 import { validateBackwardState, validateRegion3PTReconstruction } from './solution-validation.js';
 import { helmholtzPropertyDerivatives } from './thermodynamic-derivatives.js';
@@ -240,9 +241,10 @@ export function solvePS(p: number, s: number): BasicProperties {
       );
     }
     case Region.Region2: {
+      const targetS = Math.min(s, region2(p, C.R2_T_MAX).entropy);
       const T0 = r2BackwardT(p, s);
       const T = newtonRaphson(
-        (T_x) => region2(p, T_x).entropy - s,
+        (T_x) => region2(p, T_x).entropy - targetS,
         T0,
         (T_x) => (region2(p, T_x).cp ?? Number.NaN) / T_x,
       );
@@ -301,10 +303,13 @@ export function solvePS(p: number, s: number): BasicProperties {
       );
     }
     case Region.Region5: {
-      const T = newtonRaphson(
-        (T_x) => region5(p, T_x).entropy - s,
+      const targetS = Math.min(s, region5(p, C.R5_T_MAX).entropy);
+      const T = bracketedNewton(
+        (T_x) => region5(p, T_x).entropy - targetS,
+        C.R5_T_MIN + Number.EPSILON * C.R5_T_MIN,
+        C.R5_T_MAX,
         1500,
-        (T_x) => (region5(p, T_x).cp ?? Number.NaN) / T_x,
+        { derivative: (T_x) => (region5(p, T_x).cp ?? Number.NaN) / T_x, tolerance: 1e-12 },
       );
       return validateBackwardState(
         region5(p, T),

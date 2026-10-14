@@ -41,6 +41,7 @@ const MU1_H = [
  * Dynamic viscosity of water/steam [Pa·s]
  * @param T   Temperature [K]
  * @param rho Density [kg/m³]
+ * @throws {IF97Error} If the calculated viscosity is non-finite or non-positive.
  */
 export function viscosity(T: number, rho: number): number {
   assertFiniteNumber('Temperature', T);
@@ -74,7 +75,10 @@ export function viscosity(T: number, rho: number): number {
   // Keeping μ₂ = 1 (no enhancement) for practical use.
   const mu2 = 1;
 
-  return mu0 * mu1 * mu2 / 1e6; // Convert μPa·s to Pa·s
+  const mu = mu0 * mu1 * mu2 / 1e6; // Convert μPa·s to Pa·s
+  assertFiniteNumber('Dynamic viscosity', mu);
+  assertPositiveNumber('Dynamic viscosity', mu);
+  return mu;
 }
 
 // ─── Thermal Conductivity (IAPWS 2011) ──────────────────────────────────────
@@ -106,7 +110,7 @@ const DRHO_REF_COEFFS: [number, number[]][] = [
  *
  * @param T   Temperature [K]
  * @param rho Density [kg/m³]
- * @param cp  Isobaric heat capacity [kJ/(kg·K)] (optional)
+ * @param cp  Positive isobaric heat capacity [kJ/(kg·K)] (optional)
  * @param cv  Isochoric heat capacity [kJ/(kg·K)] (optional)
  * @param drhodP_T  Isothermal density derivative ∂ρ/∂P|_T [kg/m³/MPa] (optional)
  * @param mu  Dynamic viscosity [Pa·s] (optional)
@@ -119,7 +123,10 @@ export function thermalConductivity(
   assertFiniteNumber('Density', rho);
   assertPositiveNumber('Temperature', T);
   assertNonNegativeNumber('Density', rho);
-  if (cp !== undefined) assertFiniteNumber('Isobaric heat capacity', cp);
+  if (cp !== undefined) {
+    assertFiniteNumber('Isobaric heat capacity', cp);
+    assertPositiveNumber('Isobaric heat capacity', cp);
+  }
   if (cv !== undefined) {
     assertFiniteNumber('Isochoric heat capacity', cv);
     assertPositiveNumber('Isochoric heat capacity', cv);
@@ -228,14 +235,18 @@ const DC_Jh = [0.25, 1, 2.5, 1.5, 1.5, 2.5, 2, 2, 5, 0.5, 10];
 
 /**
  * Static dielectric constant [dimensionless]
- * @param T   Temperature [K]
+ * @param T   Temperature [K], must be greater than 228 K
  * @param rho Density [kg/m³]
+ * @throws {IF97Error} If T is at or below the equation's 228 K singularity.
  */
 export function dielectricConstant(T: number, rho: number): number {
   assertFiniteNumber('Temperature', T);
   assertFiniteNumber('Density', rho);
   assertPositiveNumber('Temperature', T);
   assertNonNegativeNumber('Density', rho);
+  if (T <= 228) {
+    throw new IF97Error('Temperature must be greater than 228 K for the dielectric constant');
+  }
 
   const MW = 0.018015268;
   const rhoM = rho / MW;

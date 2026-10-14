@@ -184,10 +184,10 @@ Transport correlations have validity ranges independent of the IF97 thermodynami
 
 | Property | Implemented behavior |
 | --- | --- |
-| Viscosity | Uses the IAPWS 2008 dilute-gas and finite-density terms. The near-critical enhancement is omitted, as permitted for industrial use by the release. |
-| Thermal conductivity | Full `SteamState` calculations include the IAPWS 2011 critical enhancement. The two-argument low-level call does not. Values above the release's temperature range are extrapolations. |
+| Viscosity | Uses the IAPWS 2008 dilute-gas and finite-density terms. The near-critical enhancement is omitted, as permitted for industrial use by the release. Throws `IF97Error` for a non-finite or non-positive result. |
+| Thermal conductivity | Full `SteamState` calculations include the IAPWS 2011 critical enhancement. The two-argument low-level call does not. Supplied `cp` must be finite and positive. Values above the release's temperature range are extrapolations. |
 | Surface tension | Defined for saturation states below the critical point. The low-level helper permits `273.15 K ≤ T ≤ Tc`; values below the triple point `Tt = 273.16 K` are extrapolations. |
-| Dielectric constant | The IAPWS 1997 release is valid through `873 K`. The low-level helper does not enforce that upper bound, so higher-temperature results are extrapolations. |
+| Dielectric constant | Throws `IF97Error` for `T ≤ 228 K`, where the equation is undefined. The IAPWS 1997 release is valid through `873 K`. The low-level helper does not enforce that upper bound, so higher-temperature results are extrapolations. |
 | Ionization constant (`pKw`) | Returns `null` outside `273.15 K ≤ T ≤ 1273.15 K`. The release's `1000 MPa` pressure limit describes the correlation, not the state-solver pressure range. |
 
 ## Saturation endpoints
@@ -204,9 +204,9 @@ The triple and critical points are `Pt = 0.000611657 MPa`, `Tt = 273.16 K`, `Pc 
 - The solvers do not return the exact critical point as a Region 4 state.
 - `solveTH(T, h)` and `solveTS(T, s)` reject inputs within `0.001 K` of the critical temperature.
 
-Very close to the critical point, the independently fitted Region 3 and Region 4 equations can lack a stable vapor root at the same saturation pressure and temperature. Saturation-state construction throws `IF97Error` when it cannot obtain distinct, stable liquid and vapor endpoints. This can occur inside the nominal input bounds, for example at `p = 22.0639999 MPa`. See [IF97 section 10.2](https://iapws.org/technical-guidance/release/IF97-Rev.download) for the consistency limits between the saturation and single-phase equations.
+Near the critical point, the independently fitted Region 3 and Region 4 equations can lack a stable vapor root at the same saturation pressure and temperature. Saturation-state construction throws `IF97Error` when it cannot obtain distinct, stable liquid and vapor endpoints. This can occur inside the documented input bounds, for example at `p = 22.0639999 MPa`. See [IF97 section 10.2](https://iapws.org/technical-guidance/release/IF97-Rev.download) for the consistency limits between the saturation and single-phase equations.
 
-Near 623.15 K, the independent Region 1/2 and Region 3 fits can yield two saturation states with the same H and S. `solveHS` returns one state that passes the EOS and input-constraint checks; its temperature and quality can differ from another valid solution.
+Near 623.15 K, the independent Region 1/2 and Region 3 fits can yield two saturation states with the same enthalpy and entropy. `solveHS` returns one state that satisfies its equation of state (EOS) and both input constraints within the solver's tolerances. Its temperature and quality can differ from another valid solution.
 
 Single-phase Region 3 inversion also throws `IF97Error` if it cannot construct a stable EOS state on the requested side of the saturation curve.
 

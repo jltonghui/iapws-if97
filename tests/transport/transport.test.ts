@@ -34,6 +34,24 @@ describe('Transport Properties', () => {
       expect(() => viscosity(300, Number.POSITIVE_INFINITY)).toThrow(IF97Error);
       expect(() => viscosity(300, -1)).toThrow(IF97Error);
     });
+
+    it.each([
+      { T: 50, rho: 1000 },
+      { T: 70, rho: 1000 },
+      { T: 50, rho: 0 },
+      { T: 70, rho: 0 },
+    ])('rejects non-physical extrapolation at T=$T K, rho=$rho kg/m^3', ({ T, rho }) => {
+      expect(() => viscosity(T, rho)).toThrow(IF97Error);
+    });
+
+    it.each([
+      { T: 250, rho: 1000 },
+      { T: 300, rho: 0 },
+    ])('preserves finite positive viscosity at T=$T K, rho=$rho kg/m^3', ({ T, rho }) => {
+      const mu = viscosity(T, rho);
+      expect(Number.isFinite(mu)).toBe(true);
+      expect(mu).toBeGreaterThan(0);
+    });
   });
 
   describe('thermalConductivity', () => {
@@ -106,6 +124,15 @@ describe('Transport Properties', () => {
       expect(() => thermalConductivity(300, 997, 4.2, 0, 1, 1e-3)).toThrow(IF97Error);
       expect(() => thermalConductivity(300, 997, 4.2, 4.0, 1, 0)).toThrow(IF97Error);
     });
+
+    it.each([0, -1])('rejects cp=%s with critical-enhancement parameters', (cp) => {
+      const T = 647.35;
+      expect(() => thermalConductivity(T, RHOc, cp, 3, 500, viscosity(T, RHOc))).toThrow(IF97Error);
+    });
+
+    it.each([0, -1])('rejects cp=%s even without the other optional parameters', (cp) => {
+      expect(() => thermalConductivity(300, 997, cp)).toThrow(IF97Error);
+    });
   });
 
   describe('surfaceTension', () => {
@@ -177,6 +204,21 @@ describe('Transport Properties', () => {
       expect(() => dielectricConstant(Number.NaN, 997)).toThrow(IF97Error);
       expect(() => dielectricConstant(300, Number.NEGATIVE_INFINITY)).toThrow(IF97Error);
       expect(() => dielectricConstant(300, -1)).toThrow(IF97Error);
+    });
+
+    it.each([
+      { T: 200, rho: 997 },
+      { T: 228, rho: 997 },
+      { T: 200, rho: 0 },
+      { T: 228, rho: 0 },
+    ])('rejects the equation singularity and lower temperatures at T=$T K, rho=$rho kg/m^3', ({ T, rho }) => {
+      expect(() => dielectricConstant(T, rho)).toThrow(IF97Error);
+    });
+
+    it.each([228.0001, 238, 874, 2273.15])('preserves finite dielectric extrapolation at T=%s K', (T) => {
+      const eps = dielectricConstant(T, 997);
+      expect(Number.isFinite(eps)).toBe(true);
+      expect(eps).toBeGreaterThan(1);
     });
   });
 

@@ -9,17 +9,20 @@ All notable changes to this project will be documented in this file.
 - Search all valid temperature–enthalpy branches, including non-monotonic isotherms and subcritical Region 3 vapor states.
 - `solveTH`, the unified `TH` mode, and `detectRegionTH` now throw the exported `AmbiguousStateError` when multiple physical states match. This changes calls that previously selected a branch silently or reported no valid state. The error extends `IF97Error`; unique solutions and shared saturation endpoints remain supported.
 - Extend the same candidate search and ambiguity checks to `solveTS`, the unified `TS` mode, and `detectRegionTS`. At low temperatures, the same temperature and entropy can match two liquid states and a wet-steam state. Ambiguous inputs now throw `AmbiguousStateError` instead of selecting wet steam or reporting no valid state.
-- Keep saturation input coordinates and formula ownership consistent at the 623.15 K boundary, including adjacent floating-point inputs.
-- Evaluate the saturation pressure and temperature equations with extended precision, preserving their order near region boundaries and reducing critical-region rounding errors.
+- Preserve the supplied saturation pressure or temperature and select the correct region equation at the 623.15 K boundary, including adjacent floating-point inputs.
+- Evaluate the saturation pressure and temperature equations with extended precision, preserving monotonicity near region boundaries and reducing critical-region rounding errors.
 - Use native saturation pressure to select the Region 3 liquid or vapor branch, preventing phase changes caused by inverse-temperature rounding.
 - Retain low-order pressure terms during Region 3 density inversion and saturation-state construction.
-- Recover roots next to open temperature-led branch endpoints using the existing property tolerances.
-- Correct the global enthalpy and entropy bounds, including the Node 20/22 upper-domain corner.
-- Correct HS classification for cold liquids and at the Region 1/3 and Region 2/5 boundaries, and use the actual saturation endpoints in the HS residual.
-- Preserve HS endpoint quality and single-phase properties when the endpoint EOS exactly reproduces both H and S.
+- Recover `TH` and `TS` roots just inside open branch endpoints using the existing property tolerances.
+- Correct the global enthalpy and entropy limits, including rounding at the upper domain limit on Node 20/22.
+- Correct HS classification for cold liquids and at the Region 1/3 and Region 2/5 boundaries, and use computed saturation endpoints in the HS residual.
+- Preserve HS endpoint quality and single-phase properties when the endpoint equation of state exactly reproduces the supplied enthalpy and entropy.
 - Give the saturation property span priority over overlapping single-phase fits in PH/PS classification at 623.15 K.
-- Revalidate backward states before resolving B23 boundary rounding, and preserve P/T when decimal normalization would change region or phase.
+- Revalidate backward states before resolving B23 boundary rounding, and preserve pressure and temperature when decimal normalization would change region or phase.
 - Report `IF97Error` when near-critical calculations cannot construct the requested stable phase or distinct saturation endpoints.
+- Use pressure-dependent Region 2/5 limits in PH/PS classification. Reject inputs in gaps between the fits or above the local upper bound; retain Region 2 priority in overlaps and bracket Region 5 inversion to its temperature range.
+- Reject HS inputs above the entropy-dependent Region 2/3 upper boundary at `100 MPa` or `1073.15 K`, while preserving valid boundary states.
+- Reject non-finite or non-positive viscosity results, non-positive supplied thermal-conductivity `cp`, and dielectric-constant inputs at or below `228 K`.
 
 ## 2.2.0
 

@@ -6,7 +6,7 @@ import { detectRegionPT } from './region-detector.js';
 
 // Only snap values that are effectively simple decimals plus machine-noise.
 const SIMPLE_DECIMAL_PLACES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
-const SNAP_ULPS = 8;
+const SNAP_EPSILON_FACTOR = 8;
 
 type PublicState = BasicProperties | SteamState;
 
@@ -20,7 +20,7 @@ function snapSimpleDecimal(value: number): number {
     const candidate = Math.round(value * factor) / factor;
     // Scale the acceptance window with magnitude so we only absorb
     // binary floating-point residue, not meaningful engineering deltas.
-    const tolerance = SNAP_ULPS * Number.EPSILON * Math.max(1, Math.abs(value), Math.abs(candidate));
+    const tolerance = SNAP_EPSILON_FACTOR * Number.EPSILON * Math.max(1, Math.abs(value), Math.abs(candidate));
 
     if (Math.abs(value - candidate) <= tolerance) {
       return Object.is(candidate, -0) ? 0 : candidate;
@@ -71,9 +71,10 @@ function normalizeBasicProperties(state: BasicProperties): BasicProperties {
 }
 
 function normalizeSteamState(state: SteamState): SteamState {
+  const basic = normalizeBasicProperties(state);
   return {
-    ...normalizeBasicProperties(state),
-    density: snapSimpleDecimal(state.density),
+    ...basic,
+    density: 1 / basic.specificVolume,
     viscosity: normalizeNullableNumber(state.viscosity),
     thermalConductivity: normalizeNullableNumber(state.thermalConductivity),
     surfaceTension: normalizeNullableNumber(state.surfaceTension),
@@ -85,5 +86,22 @@ function normalizeSteamState(state: SteamState): SteamState {
 export function normalizePublicState(state: SteamState): SteamState;
 export function normalizePublicState(state: BasicProperties): BasicProperties;
 export function normalizePublicState(state: PublicState): PublicState {
-  return 'density' in state ? normalizeSteamState(state) : normalizeBasicProperties(state);
+  const normalized = 'density' in state ? normalizeSteamState(state) : normalizeBasicProperties(state);
+  if (state.region === Region.Region4 && state.saturation !== undefined) {
+    normalized.saturation = {
+      pressure: normalized.pressure,
+      temperature: normalized.temperature,
+      liquid: {
+        ...normalizeBasicProperties(state.saturation.liquid),
+        pressure: normalized.pressure,
+        temperature: normalized.temperature,
+      },
+      vapor: {
+        ...normalizeBasicProperties(state.saturation.vapor),
+        pressure: normalized.pressure,
+        temperature: normalized.temperature,
+      },
+    };
+  }
+  return normalized;
 }

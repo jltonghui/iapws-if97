@@ -4,6 +4,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { solvePT, solve } from '../../src/core/solver.js';
+import { solve as publicSolve } from '../../src/index.js';
 import { region1 } from '../../src/regions/region1.js';
 import { region2 } from '../../src/regions/region2.js';
 import { solveTx } from '../../src/saturation/two-phase.js';
@@ -84,6 +85,13 @@ describe('solvePT — Integration', () => {
 });
 
 describe('solve() unified dispatcher', () => {
+  it.each([null, undefined, true, 1, 'PT', 1n, Symbol('input'), () => {}])(
+    'throws IF97Error for non-object runtime input %s',
+    (input) => {
+      expect(() => publicSolve(input as never)).toThrow(IF97Error);
+    },
+  );
+
   it('routes PT input', () => {
     const state = solve({ mode: 'PT', p: 3, T: 300 });
     expect(state.region).toBe(Region.Region1);
@@ -156,6 +164,11 @@ describe('solve() unified dispatcher', () => {
     expect(state.quality).toBe(0.5);
   });
 
+  it.each([[0, -0], [-0, 0]])('accepts Px quality aliases %s and %s', (x, quality) => {
+    expect(publicSolve({ mode: 'Px', p: 1, x, quality }))
+      .toEqual(publicSolve({ mode: 'Px', p: 1, x }));
+  });
+
   it('routes Tx input', () => {
     const state = solve({ mode: 'Tx', T: 373.15, x: 0.5 });
     expect(state.region).toBe(Region.Region4);
@@ -164,6 +177,11 @@ describe('solve() unified dispatcher', () => {
   it('accepts Tx long-form aliases', () => {
     const state = solve({ mode: 'Tx', temperature: 373.15, quality: 0.5 });
     expect(state.region).toBe(Region.Region4);
+  });
+
+  it.each([[0, -0], [-0, 0]])('accepts Tx quality aliases %s and %s', (x, quality) => {
+    expect(publicSolve({ mode: 'Tx', T: 373.15, x, quality }))
+      .toEqual(publicSolve({ mode: 'Tx', T: 373.15, x }));
   });
 
   it('accepts the triple-point saturation endpoints via Px and Tx', () => {
@@ -296,6 +314,22 @@ describe('solve() unified dispatcher', () => {
   it('throws IF97Error for conflicting aliases', () => {
     expect(() => solve({ mode: 'PT', p: 3, pressure: 4, T: 300 } as never)).toThrow(IF97Error);
   });
+
+  it.each([0.5, '0'])(
+    'rejects genuinely conflicting quality alias %s without coercion',
+    (quality) => {
+      expect(() => publicSolve({ mode: 'Px', p: 1, x: 0, quality } as never))
+        .toThrow(IF97Error);
+    },
+  );
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
+    'rejects non-finite duplicate quality aliases %s',
+    (quality) => {
+      expect(() => publicSolve({ mode: 'Px', p: 1, x: quality, quality }))
+        .toThrow(IF97Error);
+    },
+  );
 
   it('rejects non-finite values in unified solve() input', () => {
     expect(() => solve({ mode: 'PT', p: Number.NaN, T: 300 })).toThrow(IF97Error);

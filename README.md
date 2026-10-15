@@ -92,9 +92,24 @@ const b = solve(longForm);
 
 You can mix short and long names within one input. If both aliases for the same property are present, their values must match exactly. The exported `SolveInput` type is the source of truth for accepted combinations.
 
+### Thermodynamics without transport
+
+Use `solveBasic(input)` to skip transport and electromagnetic correlations. It accepts the same eight modes and aliases as `solve()`:
+
+```ts
+import { solveBasic } from 'iapws-if97';
+import type { BasicProperties } from 'iapws-if97';
+
+const state: BasicProperties = solveBasic({ mode: 'PT', p: 16, T: 823.15 });
+const density = 1 / state.specificVolume;
+console.log(state.enthalpy, density);
+```
+
+It shares `solve()`'s thermodynamic solvers, validation, ambiguity checks, and public numeric normalization. `BasicProperties` has no `density` or transport fields. Full-state solvers compute applicable transport properties.
+
 ## Solver return value
 
-All solvers return a `SteamState` object containing both thermodynamic and transport properties:
+`solve()` and the direct input-pair solvers return `SteamState` with thermodynamic and transport properties:
 
 ```ts
 type SteamState = {
@@ -117,6 +132,7 @@ type SteamState = {
   ionizationConstant: number | null;
   isobaricExpansion: number | null;
   isothermalCompressibility: number | null;
+  saturation?: SaturationEndpoints;
 };
 ```
 
@@ -127,9 +143,10 @@ type SteamState = {
 - `quality` is `null` for single-phase states; it is only defined on the saturation line.
 - In two-phase mixtures (`0 < x < 1`), `cp`, `cv`, `speedOfSound`, `isobaricExpansion`, `isothermalCompressibility`, `viscosity`, `thermalConductivity`, `dielectricConstant`, and `ionizationConstant` are `null`.
 - Saturation endpoints (`x = 0` or `x = 1`) still expose single-phase transport properties even though they carry Region 4 metadata.
+- Region 4 results include [`saturation`](#saturation-endpoints); single-phase results omit it.
 - `solvePT(p, T)` is a single-phase solver. It selects the liquid side of a subcritical isotherm when `p >= saturationPressure(T)`; use `solvePx` or `solveTx` to specify vapor quality.
 - `surfaceTension` is only available for Region 4 saturation states below the critical point; otherwise `null`.
-- `density` is provided directly, so there is no need to invert `specificVolume`.
+- `density` equals `1 / specificVolume` using the returned, normalized volume.
 - `ionizationConstant` is `null` outside the IAPWS validity range for that correlation.
 
 ## Units
@@ -154,7 +171,7 @@ Any field typed as `number | null` returns `null` when the property is undefined
 
 ## Advanced imports
 
-The package root is limited to the main solvers, `SteamState`, `SolveInput`, `Region`, and the public error classes. Lower-level helpers are available from explicit subpaths:
+The package root is limited to the main solvers, state and input types, `Region`, and the public error classes. Lower-level helpers are available from explicit subpaths:
 
 | Subpath | Exports |
 | --- | --- |
@@ -194,13 +211,30 @@ Transport correlations have validity ranges independent of the IF97 thermodynami
 
 The triple and critical points are `Pt = 0.000611657 MPa`, `Tt = 273.16 K`, `Pc = 22.064 MPa`, and `Tc = 647.096 K`.
 
+`solveBasic()` and full-state solvers retain both endpoints in `saturation` for every Region 4 result, including `x = 0` and `x = 1`. Use them without repeating saturation calculations:
+
+```ts
+import { solveBasic } from 'iapws-if97';
+
+const state = solveBasic({ mode: 'Px', p: 20, x: 0.5 });
+if (state.saturation) {
+  const { liquid, vapor } = state.saturation;
+  const hfg = vapor.enthalpy - liquid.enthalpy;
+  const sfg = vapor.entropy - liquid.entropy;
+  const vfg = vapor.specificVolume - liquid.specificVolume;
+  console.log({ hfg, sfg, vfg });
+}
+```
+
+The exported `SaturationEndpoints` type has `pressure`, `temperature`, `liquid`, and `vapor`. The endpoints are independent snapshots at the outer state's pressure and temperature. They retain region `1`, `2`, or `3` and `quality: null`, without `density`, transport fields, or nested `saturation`. Every input mode that returns Region 4 includes them.
+
 - Low-level Region 4 helpers accept a wider endpoint range. The saturation state solvers use these stricter bounds:
   - `solvePx(p, x)` accepts `Pt ≤ p < Pc`
   - `solveTx(T, x)` accepts `Tt = 273.16 K ≤ T < Tc`
 - The triple point is supported as a saturation-state boundary:
   - `solvePx(Pt, x)` is valid
   - `solveTx(Tt, x)` is valid
-- `273.15 K` is treated as a low-level extrapolation boundary only.
+- `solveTx(273.15, x)` rejects `0 °C`, which is `0.01 K` below the triple point. Use `saturationPressure(273.15)` for the mathematical Region 4 extrapolation.
 - The solvers do not return the exact critical point as a Region 4 state.
 - `solveTH(T, h)` and `solveTS(T, s)` reject inputs within `0.001 K` of the critical temperature.
 
@@ -216,7 +250,7 @@ The library throws typed errors:
 
 | Error | Meaning |
 | --- | --- |
-| `OutOfRangeError` | Input is outside the supported IF97 range |
+| `OutOfRangeError` | Input is outside the selected solver's supported range |
 | `ConvergenceError` | An internal iterative solve failed to converge |
 | `AmbiguousStateError` | Multiple physical states match the supplied temperature and either enthalpy or entropy |
 | `IF97Error` | Base class; root solvers also use it directly for non-numeric or non-finite inputs, conflicting aliases, unsupported modes, and unsupported critical-point states |

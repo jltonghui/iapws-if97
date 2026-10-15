@@ -4,7 +4,7 @@ import { evalSubregion } from '../../src/regions/region3-eval.js';
 import { saturationPressure, saturationTemperature } from '../../src/regions/region4.js';
 import { REGION3_SUBREGIONS } from '../../src/regions/region3-data.js';
 import { region3ByRhoT } from '../../src/regions/region3.js';
-import { region3SatVolume, region3Volume } from '../../src/regions/region3-subregions.js';
+import { region3SatVolume, region3Volume } from '../../src/boundaries.js';
 import { b3ab, b3cd, b3ef, b3gh, b3ij, b3jk, b3mn, b3op, b3qu, b3rx, b3uv, b3wx } from '../../src/regions/boundaries.js';
 import { IF97Error } from '../../src/types.js';
 import { expectDigitsClose } from '../helpers/assertions.js';
@@ -21,6 +21,34 @@ function expectConsistentRegion3Volume(p: number, T: number) {
 }
 
 describe('Region 3 subregion dispatch', () => {
+  it.each([0.5, -1, 2, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, '0', '1', null, undefined])(
+    'rejects a saturation phase selector other than numeric 0 or 1: %s', (x) => {
+      expect(() => region3SatVolume(20, 638.8, x as never)).toThrow(IF97Error);
+    },
+  );
+
+  it('preserves saturated liquid and vapor endpoint volumes, including negative zero', () => {
+    expectDigitsClose(region3SatVolume(20, 638.8, 0), 0.0020320919521443687, 10);
+    expect(region3SatVolume(20, 638.8, -0)).toBe(region3SatVolume(20, 638.8, 0));
+    expectDigitsClose(region3SatVolume(20, 638.8, 1), 0.0058188123235870205, 10);
+  });
+
+  it.each([100.00000000000001, 101, 200])('rejects pressure above 100 MPa: %s', (p) => {
+    expect(() => region3Volume(p, 650)).toThrow(IF97Error);
+  });
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, '650', null, undefined, 1n, Symbol('input')])(
+    'rejects non-finite or nonnumeric pressure and temperature: %s', (value) => {
+      expect(() => region3Volume(value as never, 650)).toThrow(IF97Error);
+      expect(() => region3Volume(25, value as never)).toThrow(IF97Error);
+    },
+  );
+
+  it('preserves the inclusive 100 MPa pressure boundary', () => {
+    expectDigitsClose(region3Volume(100, 650), 0.0013770665118984268, 10);
+    expectConsistentRegion3Volume(100, 650);
+  });
+
   it('rejects non-finite or non-positive densities before evaluating the Helmholtz equation', () => {
     expect(() => region3ByRhoT(0, 650)).toThrow(IF97Error);
     expect(() => region3ByRhoT(-1, 650)).toThrow(IF97Error);

@@ -18,6 +18,18 @@ function polynomialRoots(coefficients: number[], lower: number, upper: number): 
   if (coefficients.length < 2) return [];
   const scale = Math.max(...coefficients.map(Math.abs));
   const normalized = coefficients.map((value) => value / scale);
+  // Interval Horner bounds can exclude zero before constructing derivative roots.
+  let minimum = 0;
+  let maximum = 0;
+  let magnitude = 0;
+  for (let i = normalized.length - 1; i >= 0; i--) {
+    minimum = normalized[i] + minimum * (minimum < 0 ? upper : lower);
+    maximum = normalized[i] + maximum * (maximum < 0 ? lower : upper);
+    magnitude += Math.abs(normalized[i]);
+  }
+  // With x in [0, 1], allow roundoff before excluding endpoint or tangent zeros.
+  const roundingMargin = 4 * Number.EPSILON * normalized.length * magnitude;
+  if (minimum > roundingMargin || maximum < -roundingMargin) return [];
   const derivative = normalized.slice(1).map((value, i) => value * (i + 1));
   const points = [lower, ...polynomialRoots(derivative, lower, upper), upper];
   const roots: number[] = [];
@@ -43,12 +55,9 @@ function polynomialRoots(coefficients: number[], lower: number, upper: number): 
   return roots.filter((root, i) => i === 0 || root !== roots[i - 1]);
 }
 
-/** Locate isotherm extrema without a pressure grid, including closely spaced roots. */
-export function fixedTemperatureStationaryPressures(
+function stationaryCoefficients(
   T: number,
   region: Region,
-  lowerState: BasicProperties,
-  upperState: BasicProperties,
   property: FixedTemperatureProperty,
 ): number[] {
   let table: CoefficientTable;
@@ -61,11 +70,6 @@ export function fixedTemperatureStationaryPressures(
     case Region.Region4: return [];
   }
 
-  const nativeValue = (state: BasicProperties): number => region === Region.Region1
-    ? 7.1 - state.pressure / 16.53
-    : region === Region.Region3 ? 1 / (state.specificVolume * RHOc) : state.pressure;
-  const lower = Math.min(nativeValue(lowerState), nativeValue(upperState));
-  const upper = Math.max(nativeValue(lowerState), nativeValue(upperState));
   const logarithmicEntropy = property === 'entropy' && region !== Region.Region1;
   const coefficients: number[] = Array(Math.max(...table.map(([I]) => I)) +
     (logarithmicEntropy ? 1 : 0)).fill(0);
@@ -76,28 +80,49 @@ export function fixedTemperatureStationaryPressures(
   for (const [I, J, N] of table) {
     if (I === 0) continue;
     // Constant nonzero factors do not affect the derivative's zeros.
-    const tauDerivative = J === 0 ? 0 : J * Math.pow(tau, J - 1);
     let coefficient: number;
-    if (property === 'enthalpy') {
-      coefficient = region === Region.Region3
-        ? N * I * (I + J) * Math.pow(tau, J)
-        : N * I * tauDerivative;
+    if (region === Region.Region3) {
+      coefficient = N * I * (property === 'enthalpy' ? I + J : J - 1) * Math.pow(tau, J);
     } else {
+      const tauDerivative = J === 0 ? 0 : J * Math.pow(tau, J - 1);
       const physicalTau = tau + (region === Region.Region1 ? 1.222 : region === Region.Region2 ? 0.5 : 0);
-      coefficient = region === Region.Region3
-        ? N * I * (J - 1) * Math.pow(tau, J)
+      coefficient = property === 'enthalpy'
+        ? N * I * tauDerivative
         : N * I * (physicalTau * tauDerivative - Math.pow(tau, J));
     }
     coefficients[I - (logarithmicEntropy ? 0 : 1)] += coefficient;
   }
+  return coefficients;
+}
 
-  // Scaling the native variable to [0, 1] avoids powers of pressures up to 100 MPa.
-  const scaled = coefficients.map((value, i) => value * Math.pow(upper, i));
-  return polynomialRoots(scaled, lower / upper, 1).map((root) => {
-    const native = root * upper;
-    if (region === Region.Region1) return (7.1 - native) * 16.53;
-    if (region === Region.Region3) return region3ByRhoT(native * RHOc, T).pressure;
-    return native;
-  }).filter((pressure) => pressure > lowerState.pressure && pressure < upperState.pressure)
-    .sort((a, b) => a - b);
+/** Share one isotherm's coefficients while keeping each pressure interval separate. */
+export function createFixedTemperatureStationaryPressureFinder(
+  T: number,
+  property: FixedTemperatureProperty,
+): (lowerState: BasicProperties, upperState: BasicProperties) => number[] {
+  const coefficientsByRegion = new Map<Region, number[]>();
+  return (lowerState, upperState): number[] => {
+    const region = lowerState.region;
+    let coefficients = coefficientsByRegion.get(region);
+    if (coefficients === undefined) {
+      coefficients = stationaryCoefficients(T, region, property);
+      coefficientsByRegion.set(region, coefficients);
+    }
+    if (coefficients.length === 0) return [];
+
+    const nativeValue = (state: BasicProperties): number => region === Region.Region1
+      ? 7.1 - state.pressure / 16.53
+      : region === Region.Region3 ? 1 / (state.specificVolume * RHOc) : state.pressure;
+    const lower = Math.min(nativeValue(lowerState), nativeValue(upperState));
+    const upper = Math.max(nativeValue(lowerState), nativeValue(upperState));
+    // Scaling the native variable to [0, 1] avoids powers of pressures up to 100 MPa.
+    const scaled = coefficients.map((value, i) => value * Math.pow(upper, i));
+    return polynomialRoots(scaled, lower / upper, 1).map((root) => {
+      const native = root * upper;
+      if (region === Region.Region1) return (7.1 - native) * 16.53;
+      if (region === Region.Region3) return region3ByRhoT(native * RHOc, T).pressure;
+      return native;
+    }).filter((pressure) => pressure > lowerState.pressure && pressure < upperState.pressure)
+      .sort((a, b) => a - b);
+  };
 }

@@ -5,7 +5,7 @@
  * two-phase boundary, and provides helpers for quality interpolation
  * and two-phase mixing.
  */
-import type { BasicProperties } from '../types.js';
+import type { BasicProperties, SaturationEndpoints } from '../types.js';
 import { IF97Error, Region } from '../types.js';
 import { Pc, Pt, R2_T_MIN, RHOc, Tt } from '../constants.js';
 import { region1 } from '../regions/region1.js';
@@ -19,19 +19,17 @@ import {
   normalizeRegion4Temperature,
 } from './region4-boundaries.js';
 
-/** Saturated liquid and vapour properties at a given saturation state. */
-export interface SaturationEndpoints {
-  pressure: number;
-  temperature: number;
-  liquid: BasicProperties;
-  vapor: BasicProperties;
-}
+export type { SaturationEndpoints } from '../types.js';
 
 const REGION12_SATURATION_PRESSURE = saturationPressure(R2_T_MIN);
 
 /** Tag a single-phase state as Region 4 with the given vapour quality. */
-function withRegion4Metadata(state: BasicProperties, quality: number): BasicProperties {
-  return { ...state, region: Region.Region4, quality };
+function withRegion4Metadata(
+  state: BasicProperties,
+  quality: number,
+  saturation: SaturationEndpoints,
+): BasicProperties {
+  return { ...state, region: Region.Region4, quality, saturation };
 }
 
 /**
@@ -196,11 +194,11 @@ export function mixSaturationState(
   const { liquid, vapor, pressure, temperature } = endpoints;
 
   if (quality === 0) {
-    return withRegion4Metadata(liquid, 0);
+    return withRegion4Metadata(liquid, 0, endpoints);
   }
 
   if (quality === 1) {
-    return withRegion4Metadata(vapor, 1);
+    return withRegion4Metadata(vapor, 1, endpoints);
   }
 
   return {
@@ -215,6 +213,7 @@ export function mixSaturationState(
     cv: null,
     speedOfSound: null,
     quality,
+    saturation: endpoints,
     isobaricExpansion: null,
     isothermalCompressibility: null,
   };

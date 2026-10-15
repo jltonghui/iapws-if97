@@ -11,7 +11,7 @@ import {
 } from '../saturation/common.js';
 import type { BasicProperties } from '../types.js';
 import { AmbiguousStateError } from '../types.js';
-import { fixedTemperatureStationaryPressures } from './fixed-temperature-stationary.js';
+import { createFixedTemperatureStationaryPressureFinder } from './fixed-temperature-stationary.js';
 import { solveFixedTemperaturePressure, type FixedTemperatureProperty } from './fixed-temperature-solver.js';
 
 /** Return the only physical TH/TS state, or null if none exists. */
@@ -27,6 +27,7 @@ export function uniqueFixedTemperatureState(
   const solverName = property === 'enthalpy' ? 'solveTH' : 'solveTS';
   const rootTolerance = property === 'enthalpy' ? 1e-9 : 1e-12;
   const candidates: BasicProperties[] = [];
+  const stationaryPressures = createFixedTemperatureStationaryPressureFinder(T, property);
   const sameState = (first: BasicProperties, second: BasicProperties): boolean =>
     Math.abs(first.pressure - second.pressure) <= 1e-9 * Math.max(1, Math.abs(second.pressure)) &&
     Math.abs(first.specificVolume - second.specificVolume) <=
@@ -54,7 +55,7 @@ export function uniqueFixedTemperatureState(
     };
     const points = [
       lower,
-      ...fixedTemperatureStationaryPressures(T, lower.region, lower, upper, property)
+      ...stationaryPressures(lower, upper)
         .map((p) => stateAt(p, T)),
       upper,
     ];

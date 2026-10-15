@@ -45,7 +45,11 @@ export function assertRegion4PressureStateInput(p: number, solverName: string): 
 export function assertRegion4TemperatureStateInput(T: number, solverName: string): number {
   const temperature = normalizeRegion4Temperature(T);
   if (temperature < C.Tt || temperature > C.Tc) {
-    throw new OutOfRangeError('Temperature', T, C.Tt, C.Tc);
+    const error = new OutOfRangeError('Temperature', T, C.Tt, C.Tc);
+    if (temperature < C.Tt) {
+      error.message += `; ${solverName} saturation states start at the triple point (${C.Tt} K). 0 °C = 273.15 K is 0.01 K lower; low-level saturationPressure accepts 273.15 K.`;
+    }
+    throw error;
   }
   if (temperature === C.Tc) {
     throw new IF97Error(criticalPointMessage(solverName));

@@ -16,6 +16,7 @@ describe('public API surface', () => {
       'OutOfRangeError',
       'Region',
       'solve',
+      'solveBasic',
       'solveHS',
       'solvePH',
       'solvePS',

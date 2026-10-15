@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import * as api from '../../src/index.js';
 import { solve, solvePT } from '../../src/core/solver.js';
 import { detectRegionHS, detectRegionPH, detectRegionPS } from '../../src/core/region-detector.js';
 import { solvePH } from '../../src/backward/ph.js';
@@ -132,6 +133,34 @@ describe('region4 boundary behavior', () => {
   });
 
   describe('rejected saturation boundaries', () => {
+    it.each([
+      ['solveTx', () => api.solveTx(273.15, 0.5)],
+      ['solve', () => api.solve({ mode: 'Tx', T: 273.15, x: 0.5 })],
+      ['solveBasic', () => api.solveBasic({ mode: 'Tx', T: 273.15, x: 0.5 })],
+    ] as const)('explains the triple-point lower bound through public %s', (_, actual) => {
+      let error: unknown;
+      try {
+        actual();
+      } catch (caught) {
+        error = caught;
+      }
+
+      expect(error).toBeInstanceOf(api.OutOfRangeError);
+      expect(error).toMatchObject({
+        name: 'OutOfRangeError',
+        parameter: 'Temperature',
+        value: 273.15,
+        min: 273.16,
+        max: 647.096,
+      });
+      const message = (error as Error).message;
+      expect(message).toMatch(/^Temperature = 273\.15 is out of range \[273\.16, 647\.096\]/);
+      expect(message).toMatch(/solveTx.*triple point.*273\.16 K/);
+      expect(message).toContain('0 °C = 273.15 K');
+      expect(message).toContain('0.01 K');
+      expect(message).toMatch(/saturationPressure.*273\.15 K/);
+    });
+
     it.each([
       {
         name: 'solvePx at Pc with x=0',

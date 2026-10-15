@@ -28,7 +28,7 @@ function pickNumericAlias(
   if (
     shortValue !== undefined &&
     longValue !== undefined &&
-    !Object.is(shortValue, longValue)
+    shortValue !== longValue
   ) {
     throw new IF97Error(
       `solve input received conflicting values for '${shortKey}' and '${longKey}'`,
@@ -42,6 +42,10 @@ function pickNumericAlias(
 
 // Normalize public solve() aliases to the canonical short-key form used internally.
 export function normalizeSolveInput(input: SolveInput): CanonicalSolveInput {
+  if (typeof input !== 'object' || input === null) {
+    throw new IF97Error('solve input must be a non-null object');
+  }
+
   const raw = input as Record<string, unknown>;
 
   switch (input.mode) {

@@ -3,8 +3,8 @@
  *
  * Public API exports.
  */
-import type { SteamState, SolveInput } from './types.js';
-import { solve as solveAny, solvePT as solvePTInternal } from './core/solver.js';
+import type { BasicProperties, SteamState, SolveInput } from './types.js';
+import { solve as solveAny, solveBasic as solveBasicInternal, solvePT as solvePTInternal } from './core/solver.js';
 import { normalizePublicState } from './core/public-normalization.js';
 
 function normalizeSteamState(state: SteamState): SteamState {
@@ -20,6 +20,10 @@ export function solvePT(p: number, T: number): SteamState {
 
 export function solve(input: SolveInput): SteamState {
   return normalizeSteamState(solveAny(input));
+}
+
+export function solveBasic(input: SolveInput): BasicProperties {
+  return normalizePublicState(solveBasicInternal(input));
 }
 
 export function solvePH(p: number, h: number): SteamState {
@@ -51,5 +55,5 @@ export function solveTx(T: number, x: number): SteamState {
 }
 
 // Types
-export type { SteamState, SolveInput } from './types.js';
+export type { BasicProperties, SaturationEndpoints, SteamState, SolveInput } from './types.js';
 export { Region, IF97Error, AmbiguousStateError, OutOfRangeError, ConvergenceError } from './types.js';

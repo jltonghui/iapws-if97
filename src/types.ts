@@ -52,6 +52,8 @@ export interface SteamState {
   speedOfSound: number | null;
   /** Vapour quality (0–1), only defined on accepted Region 4 saturation states */
   quality: number | null;
+  /** Saturation phases without transport properties, only present for Region 4. */
+  saturation?: SaturationEndpoints;
 
   // ── Transport Properties ──────────────────────────────────────────────
 
@@ -94,6 +96,15 @@ export interface BasicProperties {
   quality: number | null;
   isobaricExpansion: number | null;
   isothermalCompressibility: number | null;
+  saturation?: SaturationEndpoints;
+}
+
+/** Saturated liquid/vapor EOS states without nested saturation metadata. */
+export interface SaturationEndpoints {
+  pressure: number;
+  temperature: number;
+  liquid: Omit<BasicProperties, 'saturation'>;
+  vapor: Omit<BasicProperties, 'saturation'>;
 }
 
 // ─── Input Modes ────────────────────────────────────────────────────────────

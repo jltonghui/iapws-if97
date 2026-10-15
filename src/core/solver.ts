@@ -1,6 +1,6 @@
 /**
  * Main IF97 solve dispatcher.
- * Computes full thermodynamic state including transport properties.
+ * Computes basic or full thermodynamic states.
  */
 import type { BasicProperties, SteamState, SolveInput } from '../types.js';
 import { Region, IF97Error, OutOfRangeError } from '../types.js';
@@ -54,13 +54,13 @@ function enrichState(basic: BasicProperties): SteamState {
 }
 
 /**
- * Solve for full thermodynamic state given pressure and temperature.
+ * Solve for basic thermodynamic state given pressure and temperature.
  *
  * @param p - Pressure [MPa]
  * @param T - Temperature [K]
- * @returns Complete steam state with transport properties
+ * @returns Basic thermodynamic properties without transport
  */
-export function solvePT(p: number, T: number): SteamState {
+function solvePTBasic(p: number, T: number): BasicProperties {
   assertFiniteNumber('Pressure', p);
   assertFiniteNumber('Temperature', T);
 
@@ -99,27 +99,38 @@ export function solvePT(p: number, T: number): SteamState {
       throw new IF97Error(`Cannot determine region for P=${p} MPa, T=${T} K`);
   }
 
-  return enrichState(basic);
+  return basic;
 }
 
 /**
- * Unified solver: compute full thermodynamic state from any supported input pair.
- * Routes to the correct solver based on input mode, enriches with transport properties,
- * and accepts either shorthand or long-form input field names.
+ * Solve for full thermodynamic state given pressure [MPa] and temperature [K].
  */
-export function solve(input: SolveInput): SteamState {
+export function solvePT(p: number, T: number): SteamState {
+  return enrichState(solvePTBasic(p, T));
+}
+
+/**
+ * Compute basic thermodynamic properties from any supported input pair.
+ * Accepts either shorthand or long-form input field names, without transport enrichment.
+ */
+export function solveBasic(input: SolveInput): BasicProperties {
   const normalized = normalizeSolveInput(input);
 
   switch (normalized.mode) {
-    case 'PT': return solvePT(normalized.p, normalized.T);
-    case 'PH': return enrichState(solvePH(normalized.p, normalized.h));
-    case 'PS': return enrichState(solvePS(normalized.p, normalized.s));
-    case 'HS': return enrichState(solveHS(normalized.h, normalized.s));
-    case 'Px': return enrichState(solvePx(normalized.p, normalized.x));
-    case 'Tx': return enrichState(solveTx(normalized.T, normalized.x));
-    case 'TH': return enrichState(solveTH(normalized.T, normalized.h));
-    case 'TS': return enrichState(solveTS(normalized.T, normalized.s));
+    case 'PT': return solvePTBasic(normalized.p, normalized.T);
+    case 'PH': return solvePH(normalized.p, normalized.h);
+    case 'PS': return solvePS(normalized.p, normalized.s);
+    case 'HS': return solveHS(normalized.h, normalized.s);
+    case 'Px': return solvePx(normalized.p, normalized.x);
+    case 'Tx': return solveTx(normalized.T, normalized.x);
+    case 'TH': return solveTH(normalized.T, normalized.h);
+    case 'TS': return solveTS(normalized.T, normalized.s);
     default:
       throw new IF97Error(`Unsupported solve mode: ${(input as { mode?: unknown }).mode ?? 'undefined'}`);
   }
+}
+
+/** Compute the full thermodynamic state, including transport properties. */
+export function solve(input: SolveInput): SteamState {
+  return enrichState(solveBasic(input));
 }

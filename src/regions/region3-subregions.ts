@@ -6,7 +6,7 @@ import { evalSubregion } from './region3-eval.js';
 import { REGION3_SUBREGIONS as R3 } from './region3-data.js';
 import { b3ab, b3cd, b3ef, b3gh, b3ij, b3jk, b3mn, b3op, b3qu, b3rx, b3uv, b3wx } from './boundaries.js';
 import { saturationPressure, saturationTemperature } from './region4.js';
-import { Pc, Tc } from '../constants.js';
+import { Pc, P_MAX, Tc } from '../constants.js';
 import { IF97Error } from '../types.js';
 
 // Shared liquid-side C/S saturation threshold from the Region 3 supplementary release.
@@ -16,6 +16,9 @@ const R3_C_S_LIQUID_BOUNDARY_PRESSURE = 19.00881189173929;
  *  Pressure thresholds from IAPWS Supplementary Release on Backward
  *  Equations v(P,T) for Region 3, Table 1 (saturation subregion limits). */
 export function region3SatVolume(p: number, T: number, x: number): number {
+  if (x !== 0 && x !== 1) {
+    throw new IF97Error('Region 3 saturation volume requires x = 0 (liquid) or x = 1 (vapor)');
+  }
   if (x === 0) {
     if (p < R3_C_S_LIQUID_BOUNDARY_PRESSURE) return evalSubregion(R3.C, p, T);
     if (p < 21.0434) return evalSubregion(R3.S, p, T);      // near P3cd
@@ -32,6 +35,9 @@ export function region3SatVolume(p: number, T: number, x: number): number {
  *  Pressure thresholds from IAPWS Supplementary Release on Backward
  *  Equations v(P,T) for Region 3, Figures 2–5. */
 export function region3Volume(p: number, T: number): number {
+  if (!Number.isFinite(p) || !Number.isFinite(T) || p > P_MAX) {
+    throw new IF97Error(`Region 3 v(P,T) requires finite p <= ${P_MAX} MPa and finite T`);
+  }
   if (p > 40) {  // Suppl. Release Fig. 2: subregions A/B
     return T <= b3ab(p) ? evalSubregion(R3.A, p, T) : evalSubregion(R3.B, p, T);
   }

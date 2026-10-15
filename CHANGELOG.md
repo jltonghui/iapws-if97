@@ -4,8 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Added
+
+- Add `solveBasic(input)` and the exported `BasicProperties` type for all eight input modes, without density or transport fields.
+- Expose both Region 4 endpoints through `saturation` and the exported `SaturationEndpoints` type, including `x = 0` and `x = 1`, without extra saturation solves.
+
 ### Fixed
 
+- Explain the triple-point lower bound in low-temperature saturation errors. `OutOfRangeError` and input bounds are unchanged.
+- Compute `density` as `1 / specificVolume` after public numeric normalization.
 - Search all valid temperature–enthalpy branches, including non-monotonic isotherms and subcritical Region 3 vapor states.
 - `solveTH`, the unified `TH` mode, and `detectRegionTH` now throw the exported `AmbiguousStateError` when multiple physical states match. This changes calls that previously selected a branch silently or reported no valid state. The error extends `IF97Error`; unique solutions and shared saturation endpoints remain supported.
 - Extend the same candidate search and ambiguity checks to `solveTS`, the unified `TS` mode, and `detectRegionTS`. At low temperatures, the same temperature and entropy can match two liquid states and a wet-steam state. Ambiguous inputs now throw `AmbiguousStateError` instead of selecting wet steam or reporting no valid state.

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as api from '../../src/index.js';
 import { solve, solvePT } from '../../src/core/solver.js';
-import { detectRegionHS, detectRegionPH, detectRegionPS } from '../../src/core/region-detector.js';
+import { detectRegionHS, detectRegionPH, detectRegionPS } from '../../src/detect.js';
 import { solvePH } from '../../src/backward/ph.js';
 import { solvePS } from '../../src/backward/ps.js';
 import { solveHS } from '../../src/backward/hs.js';

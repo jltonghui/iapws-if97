@@ -8,7 +8,6 @@ import * as C from '../constants.js';
 import { IF97Error, OutOfRangeError } from '../types.js';
 import { assertFiniteNumber } from '../core/input-validation.js';
 import { uniqueFixedTemperatureState } from './fixed-temperature-candidates.js';
-import { validateBackwardState } from './solution-validation.js';
 
 /**
  * Solve for full basic thermodynamic state from temperature and entropy.
@@ -45,8 +44,5 @@ export function solveTS(T: number, s: number): BasicProperties {
   if (state === null) {
     throw new IF97Error(`solveTS cannot determine a valid IF97 state for T=${T} K, s=${s} kJ/(kg·K)`);
   }
-  return validateBackwardState(state, [
-    { label: 'temperature', expected: T },
-    { label: 'entropy', expected: s },
-  ], { solverName: 'solveTS', expectedRegion: state.region });
+  return state;
 }

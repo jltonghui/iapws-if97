@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, it } from 'vitest';
 import { solvePH } from '../../src/backward/ph.js';
 import { solvePS } from '../../src/backward/ps.js';
 import { solveHS } from '../../src/backward/hs.js';
@@ -6,7 +6,6 @@ import { solveTH } from '../../src/backward/th.js';
 import { solveTS } from '../../src/backward/ts.js';
 import { solveTx } from '../../src/saturation/two-phase.js';
 import { Tc, Tt } from '../../src/constants.js';
-import { Region } from '../../src/types.js';
 import { expectRegion4RoundTrip } from '../helpers/backward-assertions.js';
 
 type Region4Sample = {

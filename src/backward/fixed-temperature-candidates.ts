@@ -1,5 +1,7 @@
 import * as C from '../constants.js';
+import { normalizePublicState } from '../core/public-normalization.js';
 import { solveRegion3PTBasic } from '../core/region3-pt.js';
+import { formulationSeamAtTemperature, matchFixedSeam } from '../core/formulation-seams.js';
 import { boundary23_T_to_P } from '../regions/boundaries.js';
 import { region1 } from '../regions/region1.js';
 import { region2 } from '../regions/region2.js';
@@ -13,6 +15,7 @@ import type { BasicProperties } from '../types.js';
 import { AmbiguousStateError } from '../types.js';
 import { createFixedTemperatureStationaryPressureFinder } from './fixed-temperature-stationary.js';
 import { solveFixedTemperaturePressure, type FixedTemperatureProperty } from './fixed-temperature-solver.js';
+import { validateBackwardState } from './solution-validation.js';
 
 /** Return the only physical TH/TS state, or null if none exists. */
 export function uniqueFixedTemperatureState(
@@ -27,16 +30,27 @@ export function uniqueFixedTemperatureState(
   const solverName = property === 'enthalpy' ? 'solveTH' : 'solveTS';
   const rootTolerance = property === 'enthalpy' ? 1e-9 : 1e-12;
   const candidates: BasicProperties[] = [];
+  const seamPair = formulationSeamAtTemperature(T);
+  const seam = seamPair === null ? null : matchFixedSeam(seamPair, property, target, 'temperature');
+  const incidentCandidates = new Set<BasicProperties>();
   const stationaryPressures = createFixedTemperatureStationaryPressureFinder(T, property);
   const sameState = (first: BasicProperties, second: BasicProperties): boolean =>
     Math.abs(first.pressure - second.pressure) <= 1e-9 * Math.max(1, Math.abs(second.pressure)) &&
     Math.abs(first.specificVolume - second.specificVolume) <=
       1e-9 * Math.max(first.specificVolume, second.specificVolume);
-  const add = (state: BasicProperties): void => {
+  const add = (state: BasicProperties, incident = false): void => {
     // The same saturation endpoint or stationary point can bound two intervals.
-    if (!candidates.some((other) => sameState(other, state))) {
+    let existing = candidates.find((other) => sameState(other, state));
+    if (existing !== undefined && incident && seam?.kind === 'overlap' &&
+        state.region === seam.state.region && existing.region !== state.region) {
+      candidates[candidates.indexOf(existing)] = state;
+      incidentCandidates.delete(existing);
+      existing = state;
+    }
+    if (existing === undefined) {
       candidates.push(state);
     }
+    if (incident) incidentCandidates.add(existing ?? state);
   };
 
   const addInterval = (
@@ -59,6 +73,8 @@ export function uniqueFixedTemperatureState(
         .map((p) => stateAt(p, T)),
       upper,
     ];
+    const lowerIncident = seamPair !== null && lower.pressure === seamPair.pressure;
+    const upperIncident = seamPair !== null && upper.pressure === seamPair.pressure;
 
     for (let i = 0; i < points.length; i++) {
       const current = points[i];
@@ -66,7 +82,9 @@ export function uniqueFixedTemperatureState(
       const currentIncluded = (i > 0 || includeLower) && (i < points.length - 1 || includeUpper);
       const currentMatches = Math.abs(residual) <= rootTolerance &&
         (currentIncluded || candidates.some((other) => sameState(other, current)));
-      if (currentMatches && currentIncluded) add(current);
+      if (currentMatches && currentIncluded) {
+        add(current, (i === 0 && lowerIncident) || (i === points.length - 1 && upperIncident));
+      }
       if (!currentIncluded && Math.abs(residual) <= rootTolerance && !currentMatches) {
         // The closest admissible float is the endpoint of the supported pressure domain.
         const bits = new DataView(new ArrayBuffer(8));
@@ -75,7 +93,9 @@ export function uniqueFixedTemperatureState(
         const pressure = bits.getFloat64(0);
         if (pressure > lower.pressure && pressure < upper.pressure) {
           const interior = stateAt(pressure, T);
-          if (Math.abs(interior[property] - target) <= rootTolerance) add(interior);
+          if (Math.abs(interior[property] - target) <= rootTolerance) {
+            add(interior, (i === 0 && lowerIncident) || (i === points.length - 1 && upperIncident));
+          }
         }
       }
       if (i === 0) continue;
@@ -91,7 +111,7 @@ export function uniqueFixedTemperatureState(
       add(solveFixedTemperaturePressure(
         stateAt, T, target, previous.pressure, current.pressure, property, solverName,
         previousIncluded, currentIncluded,
-      ));
+      ), (i === 1 && lowerIncident) || (i === points.length - 1 && upperIncident));
     }
   };
 
@@ -129,8 +149,37 @@ export function uniqueFixedTemperatureState(
     }
   }
 
-  if (candidates.length > 1) {
-    throw new AmbiguousStateError(T, target, property);
+  if (seam !== null) {
+    if (seam.kind === 'canonical') {
+      for (let i = candidates.length - 1; i >= 0; i--) {
+        if (incidentCandidates.has(candidates[i])) candidates.splice(i, 1);
+      }
+      add(seam.state);
+    } else if (seam.kind === 'overlap') {
+      const canonical = candidates.find((state) => incidentCandidates.has(state) &&
+        state.region === seam.pair.canonical.region);
+      if (canonical !== undefined) {
+        for (let i = candidates.length - 1; i >= 0; i--) {
+          if (candidates[i] !== canonical && incidentCandidates.has(candidates[i])) candidates.splice(i, 1);
+        }
+      }
+    } else if (candidates.length === 0) {
+      add(seam.state);
+    }
   }
-  return candidates[0] ?? null;
+
+  const validate = (state: BasicProperties): BasicProperties => validateBackwardState(state, [
+    { label: 'temperature', expected: T },
+    { label: property, expected: target },
+  ], {
+    solverName,
+    expectedRegion: state.region,
+    ...(seam !== null && state === seam.state ? { seam } : {}),
+  });
+  if (candidates.length > 1) {
+    const validated = candidates.map((state) => normalizePublicState(validate(state)));
+    validated.sort((first, second) => first.pressure - second.pressure);
+    throw new AmbiguousStateError(T, target, property, validated);
+  }
+  return candidates.length === 0 ? null : validate(candidates[0]);
 }

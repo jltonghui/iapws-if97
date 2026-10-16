@@ -59,6 +59,20 @@ describe('bracketedNewton', () => {
     expect(Math.abs(root - 1.23456789)).toBeLessThan(1e-12);
   });
 
+  it.each([
+    { expected: 0.001, initial: 0.5 },
+    { expected: 0.999, initial: 0.5 },
+    { expected: 0.3456789, initial: 0.3466789 },
+  ])('can converge a flat function on bracket width at x=$expected', ({ expected, initial }) => {
+    const root = bracketedNewton((x) => 1e-10 * (x - expected), 0, 1, initial, {
+      derivative: () => 0,
+      tolerance: 1e-12,
+      residualTolerance: 0,
+    });
+
+    expect(Math.abs(root - expected)).toBeLessThan(1e-12);
+  });
+
   it('handles reversed bracket bounds', () => {
     const root = bracketedNewton((x) => x - 3, 10, 0, 5);
     expectDigitsClose(root, 3, 9);

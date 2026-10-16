@@ -4,6 +4,7 @@ import { dampedNewton2D } from '../solvers/damped-newton-2d.js';
 import { backwardConstraintTolerance } from '../backward/tolerances.js';
 import type { BasicProperties, CoefficientTable } from '../types.js';
 import { IF97Error } from '../types.js';
+import { SaturationEndpointError } from '../errors.js';
 import {
   mixSaturationState,
   rawQualityFromSaturationProperty,
@@ -170,6 +171,38 @@ function entropyResidual(h: number, s: number, temperatureGuess: number): number
   return entropyResidualEvaluation(h, s, temperatureGuess).residual;
 }
 
+let region4HSValidCriticalUpper: number | undefined;
+
+function region4HSCriticalUpper(): number {
+  if (region4HSValidCriticalUpper !== undefined) return region4HSValidCriticalUpper;
+  let upper = REGION4_HS_NEWTON_UPPER;
+  try {
+    saturationEndpointsAtTemperature(upper);
+  } catch (error) {
+    if (!(error instanceof SaturationEndpointError)) {
+      throw error;
+    }
+    let valid = C.Tc - 1e-4;
+    saturationEndpointsAtTemperature(valid);
+    for (let iteration = 0; iteration < 40; iteration += 1) {
+      const candidate = (valid + upper) / 2;
+      if (candidate === valid || candidate === upper) break;
+      try {
+        saturationEndpointsAtTemperature(candidate);
+        valid = candidate;
+      } catch (error) {
+        if (!(error instanceof SaturationEndpointError)) {
+          throw error;
+        }
+        upper = candidate;
+      }
+    }
+    upper = valid;
+  }
+  region4HSValidCriticalUpper = upper;
+  return upper;
+}
+
 function tryRegion4HSEntropyState(h: number, s: number): BasicProperties | null {
   let cachedTemperature = Number.NaN;
   let cachedEvaluation: EntropyResidualEvaluation | null = null;
@@ -196,55 +229,130 @@ function tryRegion4HSEntropyState(h: number, s: number): BasicProperties | null 
     }
   }
 
-  if (Math.abs(s - C.R3_S_CRT) >= 0.1) {
-    return null;
-  }
-
-  const initialTemperature = C.Tc - 1e-4;
-  try {
-    const initialState = finalizeRegion4HSState(h, s, initialTemperature);
-    if (initialState !== null) return initialState;
-
-    let upper = REGION4_HS_NEWTON_UPPER;
+  const view = new DataView(new ArrayBuffer(8));
+  const nextTemperature = (T: number): number => {
+    view.setFloat64(0, T);
+    view.setBigUint64(0, view.getBigUint64(0) + 1n);
+    return view.getFloat64(0);
+  };
+  // Split the EOS seam; the valid anchor defers critical-ceiling calibration until needed.
+  const intervals = [[C.Tt, C.R2_T_MIN], [nextTemperature(C.R2_T_MIN), C.Tc - 1e-4]];
+  const liquid = s <= C.R3_S_CRT;
+  let numericalFailure = false;
+  let criticalInterval = false;
+  for (const [lower, initialUpper] of intervals) {
     try {
-      evaluate(upper);
-    } catch (error) {
-      if (!(error instanceof IF97Error) || !error.message.startsWith('Region 4 numerical inconsistency')) {
-        throw error;
-      }
-      let valid = initialTemperature;
-      for (let iteration = 0; iteration < 40; iteration += 1) {
-        const candidate = (valid + upper) / 2;
-        if (candidate === valid || candidate === upper) break;
-        try {
-          evaluate(candidate);
-          valid = candidate;
-        } catch (error) {
-          if (!(error instanceof IF97Error) || !error.message.startsWith('Region 4 numerical inconsistency')) {
-            throw error;
+      const lowerValue = evaluate(lower);
+      if (s < lowerValue.liquidEntropy || s > lowerValue.vaporEntropy) continue;
+      const highTemperature = lower > C.R2_T_MIN;
+      if (highTemperature) criticalInterval = true;
+      let upper = initialUpper;
+      let inside = lower;
+      let outside = upper;
+      let outsideValue: EntropyResidualEvaluation | null = null;
+      let temperature = lower;
+      let value = lowerValue;
+      for (let iteration = 0; iteration < 100; iteration += 1) {
+        if (Math.abs(value.quality) <= REGION4_QUALITY_TOLERANCE ||
+            Math.abs(value.quality - 1) <= REGION4_QUALITY_TOLERANCE) {
+          const endpoint = exactEndpointHSState(h, s, temperature, value.quality < 0.5 ? 0 : 1);
+          if (endpoint !== null) return endpoint;
+          const entropyQuality = rawQualityFromSaturationProperty(value.liquidEntropy, value.vaporEntropy, s);
+          if (endpointQuality(value.quality, entropyQuality) !== null &&
+              Math.abs(value.residual) <= REGION4_HS_ENDPOINT_RESIDUAL_TOLERANCE) {
+            const state = finalizeRegion4HSState(h, s, temperature);
+            if (state !== null) return state;
           }
-          upper = candidate;
         }
-      }
-      upper = valid;
-    }
 
-    const root = bracketedNewton(
-      (T) => evaluate(T).residual,
-      645,
-      upper,
-      initialTemperature,
-      {
-        tolerance: REGION4_HS_ENDPOINT_RESIDUAL_TOLERANCE,
-        derivative: (T) => evaluate(T).derivative,
-      },
-    );
-    return finalizeRegion4HSState(h, s, root);
-  } catch (error) {
-    if (!(error instanceof IF97Error)) throw error;
+        const entropyInside = s >= value.liquidEntropy && s <= value.vaporEntropy;
+        if (entropyInside) {
+          inside = temperature;
+          if (temperature > lower && lowerValue.residual * value.residual <= 0) {
+            const root = bracketedNewton(
+              (T) => evaluate(T).residual,
+              lower,
+              inside,
+              h / s,
+              {
+                tolerance: REGION4_HS_ENDPOINT_RESIDUAL_TOLERANCE,
+                derivative: (T) => evaluate(T).derivative,
+              },
+            );
+            const quality = evaluate(root).quality;
+            if (Math.abs(quality) > REGION4_QUALITY_TOLERANCE &&
+                Math.abs(quality - 1) > REGION4_QUALITY_TOLERANCE) {
+              const state = finalizeRegion4HSState(h, s, root);
+              if (state !== null) return state;
+            }
+            numericalFailure = true;
+            break;
+          }
+          if (temperature === upper) {
+            if (highTemperature && upper === initialUpper) {
+              upper = region4HSCriticalUpper();
+              if (upper > inside) {
+                outside = upper;
+                temperature = upper;
+                value = evaluate(temperature);
+                continue;
+              }
+            }
+            if (Math.abs(value.residual) <= REGION4_HS_ENDPOINT_RESIDUAL_TOLERANCE) {
+              numericalFailure = true;
+            }
+            break;
+          }
+        } else {
+          outside = temperature;
+          outsideValue = value;
+        }
+
+        const midpoint = (inside + outside) / 2;
+        if (midpoint === inside || midpoint === outside) {
+          if (Math.abs(value.residual) <= REGION4_HS_ENDPOINT_RESIDUAL_TOLERANCE ||
+              (outsideValue !== null && lowerValue.residual * outsideValue.residual <= 0)) {
+            numericalFailure = true;
+          }
+          break;
+        }
+        const phaseResidual = (liquid ? value.liquidEntropy : value.vaporEntropy) - s;
+        const derivative = liquid ? value.liquidDsDT : value.vaporDsDT;
+        // A rounded entropy zero is still inside; retain an outside bound one float higher.
+        const candidate = phaseResidual === 0
+          ? nextTemperature(temperature)
+          : temperature - phaseResidual / derivative;
+        temperature = Number.isFinite(candidate) && candidate > inside && candidate < outside
+          ? candidate
+          : outsideValue === null ? outside : midpoint;
+        value = evaluate(temperature);
+        if (iteration === 99) numericalFailure = true;
+      }
+    } catch (error) {
+      if (!(error instanceof IF97Error)) throw error;
+      numericalFailure = true;
+    }
   }
 
-  return null;
+  if (numericalFailure && criticalInterval) {
+    try {
+      const root = bracketedNewton(
+        (T) => evaluate(T).residual,
+        645,
+        region4HSCriticalUpper(),
+        C.Tc - 1e-4,
+        {
+          tolerance: REGION4_HS_ENDPOINT_RESIDUAL_TOLERANCE,
+          derivative: (T) => evaluate(T).derivative,
+        },
+      );
+      const state = finalizeRegion4HSState(h, s, root);
+      if (state !== null) return state;
+    } catch (error) {
+      if (!(error instanceof IF97Error)) throw error;
+    }
+  }
+  return numericalFailure ? tryRegion4HSNewtonState(h, s) : null;
 }
 
 function tryRegion4HSNewtonState(h: number, s: number): BasicProperties | null {
@@ -290,7 +398,7 @@ function tryRegion4HSNewtonState(h: number, s: number): BasicProperties | null {
         };
       }, [seed, initialValue.quality], {
         tolerance: seed <= C.R2_T_MIN ? REGION4_HS_ENDPOINT_RESIDUAL_TOLERANCE : 1e-12,
-        maxIterations: 30,
+        maxIterations: 60,
         isValid: ([T]) => T >= C.Tt && T <= REGION4_HS_NEWTON_UPPER &&
           (seed <= C.R2_T_MIN ? T <= C.R2_T_MIN : T > C.R2_T_MIN),
       });
@@ -501,11 +609,5 @@ export function tryRegion4HSState(h: number, s: number): BasicProperties | null 
   const backwardState = tryRegion4HSBackwardState(h, s);
   if (backwardState !== null) return backwardState;
 
-  const entropyState = tryRegion4HSEntropyState(h, s);
-  if (entropyState !== null) return entropyState;
-
-  const newtonState = tryRegion4HSNewtonState(h, s);
-  if (newtonState !== null) return newtonState;
-
-  return null;
+  return tryRegion4HSEntropyState(h, s);
 }

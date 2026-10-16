@@ -7,7 +7,7 @@
  * Reference: IAPWS-IF97, Section 9 (Equations for Region 5)
  */
 
-import { R } from '../constants.js';
+import { R } from '../gas-constant.js';
 import type { BasicProperties, CoefficientTable } from '../types.js';
 import { Region } from '../types.js';
 

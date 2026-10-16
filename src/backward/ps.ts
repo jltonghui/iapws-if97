@@ -6,18 +6,19 @@
 
 import type { BasicProperties, CoefficientTable } from '../types.js';
 import { Region, IF97Error, OutOfRangeError } from '../types.js';
+import { SaturationEndpointError } from '../errors.js';
 import * as C from '../constants.js';
 import { region1 } from '../regions/region1.js';
 import { region2 } from '../regions/region2.js';
 import { region3ByRhoT } from '../regions/region3.js';
 import { region5 } from '../regions/region5.js';
-import { assertFiniteNumber } from '../core/input-validation.js';
-import { detectRegionPS } from '../core/region-detector.js';
+import { assertFiniteNumber, withinClosedLowerBound } from '../core/input-validation.js';
+import { detectRegionPS, pressurePropertySeam } from './pressure-property-region.js';
 import { newtonRaphson } from '../solvers/newton-raphson.js';
 import { bracketedNewton } from '../solvers/bracketed-newton.js';
 import { dampedNewton2D } from '../solvers/damped-newton-2d.js';
 import { validateBackwardState, validateRegion3PTReconstruction } from './solution-validation.js';
-import { helmholtzPropertyDerivatives } from './thermodynamic-derivatives.js';
+import { helmholtzPropertyDerivatives } from '../core/thermodynamic-derivatives.js';
 import {
   mixSaturationState,
   qualityFromSaturationProperty,
@@ -206,17 +207,25 @@ export function solvePS(p: number, s: number): BasicProperties {
   if (p < C.P_MIN || p > C.P_MAX) {
     throw new OutOfRangeError('Pressure', p, C.P_MIN, C.P_MAX);
   }
-  if (s < C.S_MIN || s > C.S_MAX) {
+  if (!withinClosedLowerBound(s, C.S_MIN) || s > C.S_MAX) {
     throw new OutOfRangeError('Entropy', s, C.S_MIN, C.S_MAX);
   }
   assertCriticalRegion4PSInput(p, s, 'solvePS');
 
+  const seam = pressurePropertySeam(p, s, 'entropy');
+  if (seam !== null && seam.kind !== 'overlap') {
+    return validateBackwardState(seam.state, [
+      { label: 'pressure', expected: p },
+      { label: 'entropy', expected: s },
+    ], { solverName: 'solvePS', expectedRegion: seam.state.region, seam });
+  }
+
   let region: Region | -1;
-  let saturationFailure: IF97Error | null = null;
+  let saturationFailure: SaturationEndpointError | null = null;
   try {
-    region = detectRegionPS(p, s);
+    region = seam?.state.region ?? detectRegionPS(p, s);
   } catch (error) {
-    if (!(error instanceof IF97Error) || !error.message.startsWith('Region 4 numerical inconsistency at ')) {
+    if (!(error instanceof SaturationEndpointError)) {
       throw error;
     }
     saturationFailure = error;

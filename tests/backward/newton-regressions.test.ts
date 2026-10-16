@@ -61,9 +61,6 @@ describe('analytic backward Newton regressions', () => {
 
   it.each([
     { name: 'Region 5 just above its lower boundary', p: 25, T: 1073.151 },
-    { name: 'Region 5 in the Region 2/5 seam overlap at 4 MPa', p: 4, T: 1073.151 },
-    { name: 'Region 5 in the Region 2/5 seam overlap at 10 MPa', p: 10, T: 1073.151 },
-    { name: 'Region 5 in the Region 2/5 seam overlap at 20 MPa', p: 20, T: 1073.151 },
     { name: 'Region 5 one microkelvin above its lower boundary', p: 0.001, T: 1073.15 + 1e-6 },
     { name: 'Region 5 exact upper temperature boundary', p: 0.001, T: 2273.15 },
   ])('$name round-trips through HS', ({ p, T }) => {
@@ -73,6 +70,17 @@ describe('analytic backward Newton regressions', () => {
     expect(backward.region).toBe(Region.Region5);
     expectRelative(backward.pressure, forward.pressure);
     expectRelative(backward.temperature, forward.temperature);
+  });
+
+  it.each([4, 10, 20])('prefers a real Region 2 HS root in the formulation overlap at p=%s MPa', (p) => {
+    const forward = solvePT(p, 1073.151);
+    const backward = solveHS(forward.enthalpy, forward.entropy);
+    const reconstructed = solvePT(backward.pressure, backward.temperature);
+    expect(backward.region).toBe(Region.Region2);
+    expect(backward.temperature).toBeLessThanOrEqual(1073.15);
+    expect(reconstructed.region).toBe(Region.Region2);
+    expectRelative(reconstructed.enthalpy, forward.enthalpy);
+    expectRelative(reconstructed.entropy, forward.entropy);
   });
 
   it.each([1, 4, 10, 20, 30, 100])('keeps p=%s MPa at T=1073.15 K in Region 2', (p) => {

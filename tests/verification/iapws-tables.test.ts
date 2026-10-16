@@ -1,5 +1,5 @@
 // tests/verification/iapws-tables.test.ts
-import { describe, it, expect } from 'vitest';
+import { assert, describe, it, expect } from 'vitest';
 import { solvePT, solvePH, solvePS, solve } from '../../src/index.js';
 import { region1 } from '../../src/regions/region1.js';
 import { region2 } from '../../src/regions/region2.js';
@@ -8,7 +8,8 @@ import { region5 } from '../../src/regions/region5.js';
 import { saturationPressure, saturationTemperature } from '../../src/regions/region4.js';
 
 /** Assert relative error < tolerance */
-function expectRelClose(actual: number, expected: number, tol = 1e-6) {
+function expectRelClose(actual: number | null, expected: number, tol = 1e-6) {
+  assert.isNotNull(actual);
   expect(Math.abs((actual - expected) / expected)).toBeLessThan(tol);
 }
 

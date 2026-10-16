@@ -183,7 +183,13 @@ export class IF97Error extends Error {
 
 /** Thrown when TH or TS inputs identify multiple physical states. */
 export class AmbiguousStateError extends IF97Error {
-  constructor(T: number, value: number, property: 'enthalpy' | 'entropy' = 'enthalpy') {
+  constructor(
+    T: number,
+    value: number,
+    property: 'enthalpy' | 'entropy' = 'enthalpy',
+    /** Validated basic states in ascending pressure order; order does not imply preference. */
+    public readonly candidates: readonly BasicProperties[] = [],
+  ) {
     const symbol = property === 'enthalpy' ? 'h' : 's';
     const unit = property === 'enthalpy' ? 'kJ/kg' : 'kJ/(kg·K)';
     const pressureMode = property === 'enthalpy' ? 'PH' : 'PS';

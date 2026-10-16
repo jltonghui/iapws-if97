@@ -56,6 +56,10 @@ All numeric inputs must be finite numbers.
 
 At branch endpoints and isotherm extrema, `solveTH` uses an absolute enthalpy tolerance of `1e-9 kJ/kg`, and `solveTS` uses an absolute entropy tolerance of `1e-12 kJ/(kg·K)`. Inputs within the respective tolerance match the endpoint or extremum. Pressure recovery near an extremum is ill-conditioned.
 
+At Region 1/3 (`623.15 K`), B23, and Region 2/5 (`1073.15 K`), backward solvers resolve fit overlaps using `solvePT`'s boundary ownership: Regions 1, 3, and 2, respectively (Region 2 at B23's `100 MPa` endpoint). Unique roots on either side remain valid.
+
+Fit gaps return a boundary equation-of-state result. Returned `enthalpy` and `entropy` can differ from the inputs by at most the local difference between boundary equations plus roundoff. HS checks both properties at the same boundary coordinate. These rules apply where both regions are valid; Region 5 ends at `50 MPa`.
+
 ### Unified `solve()`
 
 Use `solve({ mode, ... })` when the input pair is determined at runtime:
@@ -277,21 +281,21 @@ The test suite covers:
 - Temperature-led backward round trips (`TH` and `TS`)
 - High-pressure Region 4 regressions
 - IAPWS R11-24 ionization-constant verification values
-- Coverage thresholds enforced locally
+- Coverage thresholds enforced in CI and before packing or publishing
 - ASME and GB/T steam-table comparisons against published values
 
 For a clean local verification run:
 
 ```bash
 npm ci
+npm run typecheck
 npm run test:package
-npm test
+npm run test:coverage
 ```
 
-`test:package` performs a clean build and checks that the dry-run npm tarball has no dangling source-map references. Coverage and published-table comparisons are available separately:
+`typecheck` checks source and tests without emitting files. `test:package` does a clean build, installs the npm tarball in an isolated consumer, and checks public exports, TypeScript declarations, and source-map references. Negative tests cover broken exports and missing runtime or declaration files. These checks and coverage thresholds run before packing or publishing. Run published-table comparisons separately:
 
 ```bash
-npm run test:coverage
 npm run test:standards
 ```
 

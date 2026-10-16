@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   gibbsPropertyDerivatives,
   helmholtzPropertyDerivatives,
-} from '../../src/backward/thermodynamic-derivatives.js';
+} from '../../src/core/thermodynamic-derivatives.js';
 import { region1 } from '../../src/regions/region1.js';
 import { region2 } from '../../src/regions/region2.js';
 import { region3ByRhoT } from '../../src/regions/region3.js';

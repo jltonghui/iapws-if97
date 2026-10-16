@@ -179,16 +179,12 @@ describe('TH uniqueness', () => {
     expect(recovered.enthalpy).toBe(wet.enthalpy);
   });
 
-  it.each([650, 700])('keeps a root just inside an open B23 endpoint at T=%s K', (T) => {
+  it.each([650, 700])('prefers the owned root only in a B23 overlap at T=%s K', (T) => {
     const h = region2(boundary23_T_to_P(T), T).enthalpy + 5e-10;
-    if (T === 650) {
-      expect(() => solveTH(T, h)).toThrow(AmbiguousStateError);
-    } else {
-      const recovered = solveTH(T, h);
-      expect(recovered.region).toBe(Region.Region2);
-      expect(recovered.enthalpy).toBe(h);
-      expectBackwardValue(solvePT(recovered.pressure, T).enthalpy, h, 'enthalpy');
-    }
+    const recovered = solveTH(T, h);
+    expect(recovered.region).toBe(T === 650 ? Region.Region3 : Region.Region2);
+    expect(recovered.enthalpy).toBe(h);
+    expectBackwardValue(solvePT(recovered.pressure, T).enthalpy, h, 'enthalpy');
   });
 
   it('preserves a vapor state below the triple-point temperature', () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { solveTH } from '../../src/backward/th.js';
-import { detectRegionTH } from '../../src/core/region-detector.js';
+import { detectRegionTH } from '../../src/detect.js';
 import { solvePT } from '../../src/core/solver.js';
 import { solveTx } from '../../src/saturation/two-phase.js';
 import { region1 } from '../../src/regions/region1.js';

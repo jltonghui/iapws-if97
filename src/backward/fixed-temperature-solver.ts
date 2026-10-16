@@ -8,7 +8,7 @@ import type { BasicProperties } from '../types.js';
 import { IF97Error, Region } from '../types.js';
 import { region3ByRhoT } from '../regions/region3.js';
 import { bracketedNewton } from '../solvers/bracketed-newton.js';
-import { gibbsPropertyDerivatives, helmholtzPropertyDerivatives } from './thermodynamic-derivatives.js';
+import { gibbsPropertyDerivatives, helmholtzPropertyDerivatives } from '../core/thermodynamic-derivatives.js';
 
 /** Property being inverted against pressure at fixed temperature. */
 export type FixedTemperatureProperty = 'enthalpy' | 'entropy';
@@ -98,6 +98,8 @@ export function solveFixedTemperaturePressure(
       },
       // Near-critical properties need a tighter bracket before termination.
       tolerance: residualScale === 1 ? 1e-12 : Number.EPSILON,
+      // Flat isotherms require convergence in pressure or density.
+      residualTolerance: 0,
     },
   );
 

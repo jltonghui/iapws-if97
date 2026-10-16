@@ -1,12 +1,14 @@
 import * as C from '../constants.js';
 import { detectRegionPT, nativeSaturationTemperatureBracket } from '../core/region-detector.js';
 import { solveRegion3PTBasic } from '../core/region3-pt.js';
+import type { FormulationSeamResolution } from '../core/formulation-seams.js';
 import { boundary23_T_to_P } from '../regions/boundaries.js';
 import { region2 } from '../regions/region2.js';
 import { region1 } from '../regions/region1.js';
 import { saturationPressure } from '../regions/region4.js';
 import type { BasicProperties } from '../types.js';
 import { IF97Error, Region } from '../types.js';
+import { RegionMismatchError } from '../errors.js';
 import {
   backwardConstraintTolerance,
   region4SaturationPressureTolerance,
@@ -21,6 +23,7 @@ export interface BackwardConstraint {
 export interface BackwardValidationOptions {
   solverName: string;
   expectedRegion?: Region;
+  seam?: FormulationSeamResolution;
 }
 
 function propertyValue(state: BasicProperties, label: BackwardConstraint['label']): number {
@@ -164,9 +167,7 @@ function validateRegionConsistency(
 
   const detectedRegion = detectRegionPT(state.pressure, state.temperature);
   if (detectedRegion !== state.region) {
-    throw new IF97Error(
-      `${solverName} produced a PT state in Region ${detectedRegion}, not Region ${state.region}`,
-    );
+    throw new RegionMismatchError(solverName, detectedRegion, state.region);
   }
 }
 
@@ -217,7 +218,16 @@ export function validateBackwardState(
   constraints: readonly BackwardConstraint[],
   options: BackwardValidationOptions,
 ): BasicProperties {
-  validateConstraints(state, constraints, options.solverName);
+  const seam = options.seam;
+  if (seam !== undefined && state !== seam.state) {
+    throw new IF97Error(`${options.solverName} supplied an unrelated formulation seam state`);
+  }
+  const checkedConstraints = seam?.kind === 'gap'
+    ? constraints.map((constraint) => constraint.label === 'enthalpy' || constraint.label === 'entropy'
+      ? { ...constraint, tolerance: seam.budgets[constraint.label] }
+      : constraint)
+    : constraints;
+  validateConstraints(state, checkedConstraints, options.solverName);
   const exactPT = withExactConstraints(
     state,
     constraints.filter(({ label }) => label === 'pressure' || label === 'temperature'),
@@ -228,8 +238,9 @@ export function validateBackwardState(
     : normalizeSaturationState(normalizeB23State(normalizeRegion3LowerState(computed)));
   validateBasicEnvelope(normalized, options.solverName);
   validateRegionConsistency(normalized, options.solverName, options.expectedRegion);
-  validateConstraints(normalized, constraints, options.solverName);
-  return withExactConstraints(normalized, constraints);
+  validateConstraints(normalized, checkedConstraints, options.solverName);
+  return withExactConstraints(normalized, seam === undefined ? constraints :
+    constraints.filter(({ label }) => label === 'pressure' || label === 'temperature'));
 }
 
 export function validateRegion3PTReconstruction(state: BasicProperties, solverName: string): BasicProperties {

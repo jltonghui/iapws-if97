@@ -5,13 +5,11 @@
  * for the IAPWS Industrial Formulation 1997.
  */
 
+import { region5 } from './regions/region5.js';
+
 // ─── Fundamental Constants ──────────────────────────────────────────────────
 
-/** Specific gas constant for water [kJ/(kg·K)].
- *  IAPWS-IF97, §2 (Table 1). Fixed value for IF97 internal consistency.
- *  Do not replace transport correlations with this value; thermal conductivity
- *  critical enhancement intentionally uses `R_IAPWS_2011_THERMAL`. */
-export const R = 0.461526;
+export { R } from './gas-constant.js';
 
 /** Specific gas constant used by the IAPWS 2011 thermal conductivity λ₂ correlation [kJ/(kg·K)].
  *  Intentionally differs from IF97's `R`; keep both constants distinct and named. */
@@ -70,17 +68,20 @@ export const T_MIN = 273.15;
 /** Maximum temperature [K] (2273.15 K = 2000 °C) */
 export const T_MAX = 2273.15;
 
+// Match the Region 5 equation's rounding in the current runtime.
+const REGION5_UPPER = region5(P_MIN, T_MAX);
+
 /** Minimum specific entropy [kJ/(kg·K)], at T_MIN and P_MAX in Region 1. */
 export const S_MIN = -0.00858228709261889;
 
 /** Maximum specific entropy [kJ/(kg·K)], at T_MAX and P_MIN in Region 5. */
-export const S_MAX = 13.904956083429228;
+export const S_MAX = REGION5_UPPER.entropy;
 
 /** Minimum specific enthalpy [kJ/kg], at T_MIN and P_MIN in Region 1. */
 export const H_MIN = -0.041587825987655716;
 
 /** Maximum specific enthalpy [kJ/kg], at T_MAX and P_MIN in Region 5. */
-export const H_MAX = 7376.980263598508;
+export const H_MAX = REGION5_UPPER.enthalpy;
 
 // ─── Region 2 Boundaries ───────────────────────────────────────────────────
 

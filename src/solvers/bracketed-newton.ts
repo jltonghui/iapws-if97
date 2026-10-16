@@ -10,8 +10,10 @@ import { ConvergenceError, IF97Error } from '../types.js';
 
 /** Configuration for the bracketed Newton solver. */
 export interface BracketedNewtonOptions {
-  /** Convergence tolerance on |f(x)| (default 1e-9) */
+  /** Bracket-width tolerance scaled by max(1, |x|), also the default residual tolerance (default 1e-9). */
   tolerance?: number;
+  /** Tolerance on |f(x)| (defaults to tolerance); 0 requires exact zero or bracket convergence. */
+  residualTolerance?: number;
   /** Maximum number of iterations (default 100) */
   maxIterations?: number;
   /** Relative step size for central-difference derivative (default 1e-6) */
@@ -50,7 +52,7 @@ function numericalDerivative(
  * @param upper        - Upper bound of the bracket
  * @param initialGuess - Optional starting point (must lie within bracket)
  * @param options      - Solver configuration
- * @returns The root x such that |f(x)| ≤ tolerance
+ * @returns A root satisfying the residual tolerance or bracket-width convergence criterion
  * @throws {ConvergenceError} if the bracket signs are the same or max iterations exceeded
  */
 export function bracketedNewton(
@@ -61,6 +63,7 @@ export function bracketedNewton(
   options?: BracketedNewtonOptions,
 ): number {
   const tolerance = options?.tolerance ?? 1e-9;
+  const residualTolerance = options?.residualTolerance ?? tolerance;
   const maxIterations = options?.maxIterations ?? 100;
   const derivativeStep = options?.derivativeStep ?? 1e-6;
 
@@ -69,8 +72,8 @@ export function bracketedNewton(
   let fa = f(a);
   let fb = f(b);
 
-  if (Math.abs(fa) <= tolerance) return a;
-  if (Math.abs(fb) <= tolerance) return b;
+  if (Math.abs(fa) <= residualTolerance) return a;
+  if (Math.abs(fb) <= residualTolerance) return b;
   if (fa * fb > 0) {
     throw new IF97Error(
       `bracketedNewton: f(${a}) and f(${b}) have the same sign (${fa.toExponential(3)}, ${fb.toExponential(3)}); bracket does not contain a root`,
@@ -84,7 +87,7 @@ export function bracketedNewton(
 
   for (let iter = 0; iter < maxIterations; iter++) {
     const fx = f(x);
-    if (Math.abs(fx) <= tolerance) {
+    if (Math.abs(fx) <= residualTolerance) {
       return x;
     }
 

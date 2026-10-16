@@ -62,6 +62,14 @@ describe('Region 3 subregion dispatch', () => {
     ]);
   });
 
+  // https://iapws.org/technical-guidance/release/Supp-VPT3-2016.download
+  it.each([
+    { p: 22.6, T: 649.1, v: 3.131208996e-3 },
+    { p: 22.8, T: 649.9, v: 3.221160278e-3 },
+  ])('matches SR5-05(2016) Table 5 subregion 3o at p=$p MPa, T=$T K', ({ p, T, v }) => {
+    expectDigitsClose(region3Volume(p, T), v, 12);
+  });
+
   it('covers the major v(p,T) dispatcher branches', () => {
     const cases = [
       { p: 45.0, T: b3ab(45.0) - 0.2 },

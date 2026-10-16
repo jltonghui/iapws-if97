@@ -3,12 +3,12 @@
  * Strategy: compute forward (P,T → h,s), then backward (P,h → T) and verify.
  */
 import { describe, it, expect } from 'vitest';
-import { region1 } from '../../src/regions/region1';
-import { region2 } from '../../src/regions/region2';
+import { region1 } from '../../src/regions/region1.js';
+import { region2 } from '../../src/regions/region2.js';
 import { solvePT } from '../../src/core/solver.js';
-import { b2bc_H_P, solvePH } from '../../src/backward/ph';
-import { solvePS } from '../../src/backward/ps';
-import { solvePx } from '../../src/saturation/two-phase';
+import { b2bc_H_P, solvePH } from '../../src/backward/ph.js';
+import { solvePS } from '../../src/backward/ps.js';
+import { solvePx } from '../../src/saturation/two-phase.js';
 import { expectRegion4RoundTrip } from '../helpers/backward-assertions.js';
 
 const TOL_T = 0.2; // K tolerance for temperature round-trip

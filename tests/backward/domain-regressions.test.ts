@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { IF97Error, Region, solveHS, solvePH, solvePS, solvePT, solvePx, solveTH, solveTS, solveTx } from '../../src/index.js';
-import { detectRegionHS } from '../../src/detect.js';
+import { IF97Error, Region, solve, solveBasic, solveHS, solvePH, solvePS, solvePT, solvePx, solveTH, solveTS, solveTx } from '../../src/index.js';
+import { detectRegionHS, detectRegionPH, detectRegionPS } from '../../src/detect.js';
 import { boundary23_T_to_P } from '../../src/boundaries.js';
 import { saturationPressure, saturationTemperature } from '../../src/saturation.js';
-import { Pc, Tc } from '../../src/constants.js';
+import { H_MAX, P_MIN, Pc, S_MAX, T_MAX, Tc } from '../../src/constants.js';
 import { region3ByRhoT, region3PressureResidual } from '../../src/regions/region3.js';
+import { region1 } from '../../src/regions/region1.js';
+import { region2 } from '../../src/regions/region2.js';
 import { region5 } from '../../src/regions/region5.js';
 import { solveRegion3PTBasic } from '../../src/core/region3-pt.js';
 import { validateBackwardState } from '../../src/backward/solution-validation.js';
@@ -36,6 +38,33 @@ describe('Public domain round-trip regressions', () => {
     const recovered = solvePH(forward.pressure, forward.enthalpy);
     expect(recovered.temperature).toBe(273.15);
     expectBackwardValue(solvePT(recovered.pressure, recovered.temperature).enthalpy, forward.enthalpy, 'enthalpy');
+  });
+
+  it.each([3.0000000000000013, 18.28049948300001, 99.99999999999999])('accepts the closed PS liquid lower boundary after public pressure rounding at p=%s', (p) => {
+    const forward = solvePT(p, 273.15);
+    const input = { mode: 'PS', p: forward.pressure, s: forward.entropy } as const;
+    expect(detectRegionPS(input.p, input.s)).toBe(Region.Region1);
+    for (const recovered of [solvePS(input.p, input.s), solve(input), solveBasic(input)]) {
+      expect(recovered.region).toBe(Region.Region1);
+      expect(recovered.pressure).toBe(input.p);
+      expect(recovered.temperature).toBe(273.15);
+      expect(recovered.entropy).toBe(input.s);
+      expectBackwardValue(solvePT(input.p, recovered.temperature).entropy, input.s, 'entropy', 1e-14);
+    }
+  });
+
+  it.each([3, 18.280499483, 100])('rejects PS below the liquid lower boundary beyond machine noise at p=%s', (p) => {
+    const s = region1(p, 273.15).entropy - 1e-12;
+    expect(detectRegionPS(p, s)).toBe(-1);
+    expect(() => solvePS(p, s)).toThrow(IF97Error);
+    expect(() => solve({ mode: 'PS', p, s })).toThrow(IF97Error);
+    expect(() => solveBasic({ mode: 'PS', p, s })).toThrow(IF97Error);
+  });
+
+  it.each([3, 100])('preserves the existing PH liquid lower-bound tolerance at p=%s', (p) => {
+    const h = region1(p, 273.15).enthalpy - (p === 3 ? 1e-9 : 5e-8);
+    expect(detectRegionPH(p, h)).toBe(Region.Region1);
+    expect(solvePH(p, h).temperature).toBe(273.15);
   });
 
   it.each([16.530817169029813, 16.52916425270455])('accepts the closed Region 1 PH/PS upper boundary after public temperature rounding at p=%s', (p) => {
@@ -131,9 +160,25 @@ describe('Public domain round-trip regressions', () => {
     expectBackwardValue(reconstructed.entropy, forward.entropy, 'entropy');
   });
 
-  it('keeps the native Region 3 lower HS boundary open and its pressure ceiling closed', () => {
+  it('recovers the native Region 3 seam endpoint through a valid EOS while retaining the pressure ceiling', () => {
     const openBoundary = solveRegion3PTBasic(100, 623.15);
-    expect(() => solveHS(openBoundary.enthalpy, openBoundary.entropy)).toThrow(IF97Error);
+    const canonical = solvePT(100, 623.15);
+    const recovered = solveHS(openBoundary.enthalpy, openBoundary.entropy);
+    const reconstructed = solvePT(recovered.pressure, recovered.temperature);
+    expectBackwardValue(recovered.pressure, 100, 'pressure', 1e-8);
+    expect(reconstructed.region).toBe(recovered.region);
+    expect(Math.abs(recovered.enthalpy - reconstructed.enthalpy)).toBeLessThan(1e-7);
+    expect(Math.abs(recovered.entropy - reconstructed.entropy)).toBeLessThan(1e-10);
+    if (recovered.region === Region.Region1) {
+      expect(recovered.temperature).toBe(623.15);
+      expect(Math.abs(recovered.enthalpy - openBoundary.enthalpy)).toBeLessThanOrEqual(Math.abs(canonical.enthalpy - openBoundary.enthalpy) + 1e-7);
+      expect(Math.abs(recovered.entropy - openBoundary.entropy)).toBeLessThanOrEqual(Math.abs(canonical.entropy - openBoundary.entropy) + 1e-10);
+    } else {
+      expect(recovered.region).toBe(Region.Region3);
+      expect(recovered.temperature).toBeGreaterThan(623.15);
+      expectBackwardValue(reconstructed.enthalpy, openBoundary.enthalpy, 'enthalpy', 1e-7);
+      expectBackwardValue(reconstructed.entropy, openBoundary.entropy, 'entropy', 1e-10);
+    }
     const forward = solvePT(100, 623.1500001);
     expect(() => solveHS(forward.enthalpy + 1e-6, forward.entropy)).toThrow(IF97Error);
   });
@@ -148,9 +193,20 @@ describe('Public domain round-trip regressions', () => {
     expectBackwardValue(reconstructed.entropy, forward.entropy, 'entropy');
   });
 
-  it('keeps the infeasible Region 2/5 enthalpy gap excluded', () => {
+  it('recovers a coupled Region 2/5 HS gap as an actual owned seam state', () => {
     const boundary = region5(0.0007395221818020803, 1073.15);
-    expect(() => solveHS(boundary.enthalpy - 1e-5, boundary.entropy)).toThrow(IF97Error);
+    const h = boundary.enthalpy - 1e-5;
+    const recovered = solveHS(h, boundary.entropy);
+    const lower = region2(recovered.pressure, 1073.15);
+    const upper = region5(recovered.pressure, 1073.15);
+    const fraction = (h - lower.enthalpy) / (upper.enthalpy - lower.enthalpy);
+    expect(recovered.region).toBe(Region.Region2);
+    expect(recovered.temperature).toBe(1073.15);
+    expect(fraction).toBeGreaterThanOrEqual(0);
+    expect(fraction).toBeLessThanOrEqual(1);
+    expect(Math.abs(lower.entropy + fraction * (upper.entropy - lower.entropy) - boundary.entropy)).toBeLessThan(1e-10);
+    expect(Math.abs(recovered.enthalpy - lower.enthalpy)).toBeLessThan(1e-8);
+    expect(Math.abs(recovered.entropy - lower.entropy)).toBeLessThan(1e-10);
   });
 
   it.each([
@@ -162,6 +218,19 @@ describe('Public domain round-trip regressions', () => {
     expect(recovered.region).toBe(Region.Region2);
     expectBackwardValue(recovered.pressure, p, 'pressure');
     expectBackwardValue(recovered.temperature, T, 'temperature');
+  });
+
+  it('derives the global upper limits from the runtime Region 5 corner', () => {
+    const corner = region5(P_MIN, T_MAX);
+    expect(H_MAX).toBe(corner.enthalpy);
+    expect(S_MAX).toBe(corner.entropy);
+  });
+
+  it('accepts the global upper limits through HS', () => {
+    const recovered = solveHS(H_MAX, S_MAX);
+    expect(recovered.region).toBe(Region.Region5);
+    expectBackwardValue(recovered.pressure, P_MIN, 'pressure');
+    expectBackwardValue(recovered.temperature, T_MAX, 'temperature');
   });
 
   it.each(['PH', 'PS', 'HS', 'TH', 'TS'] as const)('accepts the upper PT corner through %s', (mode) => {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { assert, describe, expect, it } from 'vitest';
 import { solvePT } from '../../src/index.js';
 import { printGroupedReport, type ReportRow } from '../helpers/standards-reporting.js';
 
@@ -79,6 +79,7 @@ describe('GB/T 34060-2017 comparison report', () => {
 
     for (const { caseId, p, tC, expected } of cases) {
       const state = solvePT(p, tC + 273.15);
+      assert.isNotNull(state.speedOfSound);
       rows.push(
         { caseId, property: 'v', expected: expected.v, actual: state.specificVolume },
         { caseId, property: 'h', expected: expected.h, actual: state.enthalpy },

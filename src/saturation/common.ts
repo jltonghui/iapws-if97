@@ -7,6 +7,7 @@
  */
 import type { BasicProperties, SaturationEndpoints } from '../types.js';
 import { IF97Error, Region } from '../types.js';
+import { SaturationEndpointError } from '../errors.js';
 import { Pc, Pt, R2_T_MIN, RHOc, Tt } from '../constants.js';
 import { region1 } from '../regions/region1.js';
 import { region2 } from '../regions/region2.js';
@@ -93,7 +94,7 @@ function buildSaturationEndpoints(pressure: number, temperature: number): Satura
       vapor = solveR3Endpoint(eosPressure, temperature, 1, pressureLow);
     } catch (error) {
       if (!(error instanceof IF97Error)) throw error;
-      throw new IF97Error(`${inconsistency}: ${error.message}`);
+      throw new SaturationEndpointError(`${inconsistency}: ${error.message}`);
     }
     if (!(1 / liquid.specificVolume > RHOc && 1 / vapor.specificVolume < RHOc &&
         vapor.specificVolume > liquid.specificVolume && vapor.enthalpy > liquid.enthalpy &&
@@ -101,7 +102,7 @@ function buildSaturationEndpoints(pressure: number, temperature: number): Satura
           Number.isFinite(state.pressure) && Math.abs(state.pressure - pressure) / pressure <= 1e-6 &&
           [state.cp, state.cv, state.isothermalCompressibility, state.speedOfSound]
             .every((value) => value !== null && Number.isFinite(value) && value > 0)))) {
-      throw new IF97Error(inconsistency);
+      throw new SaturationEndpointError(inconsistency);
     }
   } else {
     liquid = region1(eosPressure, temperature);

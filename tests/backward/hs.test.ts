@@ -3,8 +3,8 @@ import { region1 } from '../../src/regions/region1.js';
 import { region2 } from '../../src/regions/region2.js';
 import { region5 } from '../../src/regions/region5.js';
 import { saturationTemperature } from '../../src/regions/region4.js';
-import { detectRegionHS } from '../../src/core/region-detector.js';
-import { IF97Error, Region, OutOfRangeError } from '../../src/types.js';
+import { detectRegionHS } from '../../src/detect.js';
+import { Region, OutOfRangeError } from '../../src/types.js';
 import { solveHS } from '../../src/backward/hs.js';
 import { solvePx } from '../../src/saturation/two-phase.js';
 import { expectBackwardValue, expectRegion4RoundTrip } from '../helpers/backward-assertions.js';
@@ -161,7 +161,7 @@ describe('solveHS backward equations', () => {
     expect(() => solveHS(2000, 1e9)).toThrow(OutOfRangeError);
   });
 
-  it('throws IF97Error for an infeasible h-s combination', () => {
-    expect(() => solveHS(1500, 1)).toThrow(IF97Error);
+  it('throws OutOfRangeError for an infeasible h-s combination', () => {
+    expect(() => solveHS(1500, 1)).toThrow(OutOfRangeError);
   });
 });

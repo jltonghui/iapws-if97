@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { B23_T_MAX, P_MIN, R2_T_MAX } from '../../src/constants.js';
 import { detectRegionHS } from '../../src/detect.js';
-import { IF97Error, Region, solve, solveHS, solvePT, type SteamState } from '../../src/index.js';
+import { OutOfRangeError, Region, solve, solveHS, solvePT, type SteamState } from '../../src/index.js';
 import { solveRegion3PTBasic } from '../../src/core/region3-pt.js';
 import { region2 } from '../../src/regions/region2.js';
 import { expectBackwardValue } from '../helpers/backward-assertions.js';
@@ -33,8 +33,7 @@ describe('HS upper envelope', () => {
 
   describe.each(routes)('$name', ({ run }) => {
     it.each(reportedInputs)('rejects h=$h, s=$s before numerical refinement', ({ h, s }) => {
-      expect(() => run(h, s)).toThrow(IF97Error);
-      expect(() => run(h, s)).toThrow(/^Cannot determine region for h=/);
+      expect(() => run(h, s)).toThrow(OutOfRangeError);
     });
   });
 
@@ -54,7 +53,7 @@ describe('HS upper envelope', () => {
       : region2(p, T);
     const h = boundary.enthalpy + 1e-7;
     expect(detectRegionHS(h, boundary.entropy)).toBe(-1);
-    expect(() => solveHS(h, boundary.entropy)).toThrow(/^Cannot determine region for h=/);
+    expect(() => solveHS(h, boundary.entropy)).toThrow(OutOfRangeError);
   });
 
   it.each([

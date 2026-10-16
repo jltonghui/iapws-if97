@@ -1,10 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { solveHS, solvePT, solveTx } from '../../src/index.js';
 import { Tc } from '../../src/constants.js';
-import { detectRegionHS } from '../../src/core/region-detector.js';
+import { detectRegionHS } from '../../src/detect.js';
 import { saturationPressure, saturationTemperature } from '../../src/regions/region4.js';
-import { Region } from '../../src/types.js';
+import { IF97Error, Region } from '../../src/types.js';
 import { region3ByRhoT } from '../../src/regions/region3.js';
+import * as saturationCommon from '../../src/saturation/common.js';
+import * as region4HS from '../../src/saturation/region4-hs.js';
 import {
   expectBackwardValue,
   expectRegion4RoundTrip,
@@ -14,6 +16,50 @@ const PRESSURE = 1;
 const SATURATION_TEMPERATURE = saturationTemperature(PRESSURE);
 
 describe('H-S classification next to the saturation boundary', () => {
+  it.each([
+    { p: 0.1, T: 372.5 },
+    { p: saturationPressure(610) + 0.001, T: 610 },
+  ])('rules out the saturation dome before inverse solving at p=$p, T=$T', ({ p, T }) => {
+    const forward = solvePT(p, T);
+    const saturation = vi.spyOn(region4HS, 'tryRegion4HSState');
+    try {
+      expect(detectRegionHS(forward.enthalpy, forward.entropy)).toBe(Region.Region1);
+      const backward = solveHS(forward.enthalpy, forward.entropy);
+      expect(backward.region).toBe(Region.Region1);
+      expectBackwardValue(backward.pressure, p, 'pressure');
+      expectBackwardValue(backward.temperature, T, 'temperature');
+      expect(saturation).not.toHaveBeenCalled();
+    } finally {
+      saturation.mockRestore();
+    }
+  });
+
+  it.each([372.5, 610])('retains saturation confirmation at the T=%s liquid endpoint', (T) => {
+    const forward = solveTx(T, 0);
+    const saturation = vi.spyOn(region4HS, 'tryRegion4HSState');
+    try {
+      expect(detectRegionHS(forward.enthalpy, forward.entropy)).toBe(Region.Region4);
+      expectRegion4RoundTrip(solveHS(forward.enthalpy, forward.entropy), forward);
+      expect(saturation).toHaveBeenCalled();
+    } finally {
+      saturation.mockRestore();
+    }
+  });
+
+  it('keeps saturation confirmation when endpoint inversion is unavailable', () => {
+    const forward = solvePT(0.1, 372.5);
+    const endpoints = vi.spyOn(saturationCommon, 'saturationEndpointsAtTemperature')
+      .mockImplementationOnce(() => { throw new IF97Error('Unavailable saturation endpoint'); });
+    const saturation = vi.spyOn(region4HS, 'tryRegion4HSState').mockReturnValue(null);
+    try {
+      expect(detectRegionHS(forward.enthalpy, forward.entropy)).toBe(Region.Region1);
+      expect(saturation).toHaveBeenCalledOnce();
+    } finally {
+      endpoints.mockRestore();
+      saturation.mockRestore();
+    }
+  });
+
   it.each([
     { offset: -0.005, region: Region.Region1 },
     { offset: -0.001, region: Region.Region1 },

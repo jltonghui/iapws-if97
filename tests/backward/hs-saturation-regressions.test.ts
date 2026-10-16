@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Region, solveHS, solvePT, solvePx, solveTx } from '../../src/index.js';
 import { P_MIN } from '../../src/constants.js';
-import { tryRegion4HSState } from '../../src/saturation/region4-hs.js';
+import * as region4HS from '../../src/saturation/region4-hs.js';
 import { expectBackwardValue, expectRegion4RoundTrip } from '../helpers/backward-assertions.js';
 
 describe('HS saturation coordinate regressions', () => {
@@ -48,7 +48,7 @@ describe('HS saturation coordinate regressions', () => {
 
   it('rejects a quality-clamped candidate that no longer matches H and S', () => {
     const forward = solvePT(0.0006570887062059462, 274.15);
-    expect(tryRegion4HSState(forward.enthalpy, forward.entropy)).toBeNull();
+    expect(region4HS.tryRegion4HSState(forward.enthalpy, forward.entropy)).toBeNull();
   });
 
   it('keeps the Region 2 initial pressure inside the backward-equation domain', () => {
@@ -65,6 +65,9 @@ describe('HS saturation coordinate regressions', () => {
     { T: 623.15, x: 1 },
     { T: 623.150001, x: 1 - 1e-9 },
     { T: 623.150001, x: 1 },
+    { T: 646.89, x: 0.95 },
+    { T: 646.91, x: 1 },
+    { T: 646.9178, x: 0.99 },
     { T: 646.996, x: 0.99 },
     { T: 647.086, x: 1e-7 },
     { T: 647.094, x: 0.25 },
@@ -75,6 +78,27 @@ describe('HS saturation coordinate regressions', () => {
     const checked = solveTx(recovered.temperature, recovered.quality!);
     expectBackwardValue(checked.enthalpy, forward.enthalpy, 'enthalpy');
     expectBackwardValue(checked.entropy, forward.entropy, 'entropy');
+  });
+
+  it('recovers a fixed near-critical high-quality HS input as Region 4', () => {
+    const h = 2152.9981457100225;
+    const s = 4.513425143199791;
+    const recovered = solveHS(h, s);
+    expect(recovered.region).toBe(Region.Region4);
+    expect(recovered.quality).toBeCloseTo(0.99, 8);
+    const checked = solveTx(recovered.temperature, recovered.quality!);
+    expectBackwardValue(checked.enthalpy, h, 'enthalpy');
+    expectBackwardValue(checked.entropy, s, 'entropy');
+  });
+
+  it('rejects the metastable Region 3 HS result when saturation recovery fails', () => {
+    const saturation = vi.spyOn(region4HS, 'tryRegion4HSState').mockReturnValue(null);
+    try {
+      expect(() => solveHS(2152.9981457100225, 4.513425143199791))
+        .toThrow(/^solveHS failed to match enthalpy:/);
+    } finally {
+      saturation.mockRestore();
+    }
   });
 
   it('returns a physical state when both sides of the formula seam match H and S', () => {

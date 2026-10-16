@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { P_MIN, R2_T_MAX, R5_T_MAX } from '../../src/constants.js';
 import { detectRegionPH, detectRegionPS } from '../../src/detect.js';
-import { IF97Error, Region, solve, solvePH, solvePS, solvePT, type SteamState } from '../../src/index.js';
+import { Region, solve, solvePH, solvePS, solvePT, type SteamState } from '../../src/index.js';
 import { region2 } from '../../src/regions/region2.js';
 import { region5 } from '../../src/regions/region5.js';
 import { expectBackwardValue } from '../helpers/backward-assertions.js';
@@ -40,31 +40,32 @@ function expectReconstruction(
 describe.each(modes)('Region 2/5 $name boundaries', ({
   property, detect, backward, unified, upperExcess, smallExcess, overlapPressures, reportedGaps,
 }) => {
-  it.each(reportedGaps)('rejects the reported seam gap at p=$p MPa', ({ p, value }) => {
+  it.each<{ p: number; value: number }>(reportedGaps)('snaps the reported numerical seam gap at p=$p MPa', ({ p, value }) => {
     expect(value).toBeGreaterThan(region2(p, R2_T_MAX)[property]);
     expect(value).toBeLessThan(region5(p, R2_T_MAX)[property]);
-    expect(detect(p, value)).toBe(-1);
+    expect(detect(p, value)).toBe(Region.Region2);
     for (const run of [backward, unified]) {
-      expect(() => run(p, value)).toThrow(IF97Error);
-      expect(() => run(p, value)).toThrow(/^Cannot determine region for /);
+      const recovered = run(p, value);
+      expect(recovered.temperature).toBe(R2_T_MAX);
+      expectReconstruction(recovered, p, region2(p, R2_T_MAX)[property], property, Region.Region2);
     }
   });
 
-  it('rejects the native seam gap in the low-pressure detector branch', () => {
+  it('snaps the native numerical seam gap in the low-pressure detector branch', () => {
     const p = 0.001;
     const upper = region2(p, R2_T_MAX)[property];
     const lower = region5(p, R2_T_MAX)[property];
     expect(lower).toBeGreaterThan(upper);
     const value = (lower + upper) / 2;
-    expect(detect(p, value)).toBe(-1);
-    expect(() => backward(p, value)).toThrow(/^Cannot determine region for /);
+    expect(detect(p, value)).toBe(Region.Region2);
+    expectReconstruction(backward(p, value), p, upper, property, Region.Region2);
   });
 
-  it.each([0.001, 50])('keeps the native Region 5 lower boundary open at p=%s MPa', (p) => {
+  it.each([0.001, 50])('maps the open Region 5 endpoint to the owned Region 2 seam at p=%s MPa', (p) => {
     const value = region5(p, R2_T_MAX)[property];
     expect(value).toBeGreaterThan(region2(p, R2_T_MAX)[property]);
-    expect(detect(p, value)).toBe(-1);
-    expect(() => backward(p, value)).toThrow(/^Cannot determine region for /);
+    expect(detect(p, value)).toBe(Region.Region2);
+    expectReconstruction(backward(p, value), p, region2(p, R2_T_MAX)[property], property, Region.Region2);
   });
 
   it('rejects an arbitrarily large input in the detector', () => {
@@ -83,11 +84,11 @@ describe.each(modes)('Region 2/5 $name boundaries', ({
     expect(() => backward(50, value)).toThrow(/^Cannot determine region for /);
   });
 
-  it('does not widen the closed Region 2 seam to absorb a real gap', () => {
+  it('snaps a small input residual inside the local numerical seam gap', () => {
     const value = region2(50, R2_T_MAX)[property] + smallExcess;
     expect(value).toBeLessThan(region5(50, R2_T_MAX)[property]);
-    expect(detect(50, value)).toBe(-1);
-    expect(() => backward(50, value)).toThrow(/^Cannot determine region for /);
+    expect(detect(50, value)).toBe(Region.Region2);
+    expectReconstruction(backward(50, value), 50, region2(50, R2_T_MAX)[property], property, Region.Region2);
   });
 
   it.each([55.3, 100])('uses the Region 2 ceiling above 50 MPa at p=%s MPa', (p) => {

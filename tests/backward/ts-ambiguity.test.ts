@@ -3,7 +3,7 @@ import { AmbiguousStateError, IF97Error, Region, solve, solvePT, solvePx, solveT
 import { detectRegionTS } from '../../src/detect.js';
 import { saturationPressure } from '../../src/saturation.js';
 import { boundary23_T_to_P } from '../../src/boundaries.js';
-import { region2 } from '../../src/regions.js';
+import { region1, region2 } from '../../src/regions.js';
 import { expectBackwardValue, expectRegion4RoundTrip } from '../helpers/backward-assertions.js';
 
 describe('TS uniqueness', () => {
@@ -94,16 +94,12 @@ describe('TS uniqueness', () => {
     expect(recovered.entropy).toBe(forward.entropy);
   });
 
-  it.each([650, 700])('keeps a root just inside an open B23 endpoint at T=%s K', (T) => {
+  it.each([650, 700])('prefers the owned root only in a B23 overlap at T=%s K', (T) => {
     const s = region2(boundary23_T_to_P(T), T).entropy + 5e-13;
-    if (T === 650) {
-      expect(() => solveTS(T, s)).toThrow(AmbiguousStateError);
-    } else {
-      const recovered = solveTS(T, s);
-      expect(recovered.region).toBe(Region.Region2);
-      expect(recovered.entropy).toBe(s);
-      expectBackwardValue(solvePT(recovered.pressure, T).entropy, s, 'entropy');
-    }
+    const recovered = solveTS(T, s);
+    expect(recovered.region).toBe(T === 650 ? Region.Region3 : Region.Region2);
+    expect(recovered.entropy).toBe(s);
+    expectBackwardValue(solvePT(recovered.pressure, T).entropy, s, 'entropy');
   });
 
   it('preserves the unique tangent root below the triple point', () => {
@@ -170,6 +166,17 @@ describe('TS uniqueness', () => {
     expect(recovered.entropy).toBe(forward.entropy);
     expect(Math.abs(solvePT(recovered.pressure, T).entropy - forward.entropy)).toBeLessThan(1e-12);
     expect(detectRegionTS(T, forward.entropy)).toBe(Region.Region1);
+  });
+
+  it('recovers pressure near the density maximum despite a small entropy derivative', () => {
+    const T = 277.1444;
+    const pressure = 0.0018727;
+    const forward = solvePT(pressure, T);
+    const recovered = solveTS(T, forward.entropy);
+
+    expect(recovered.region).toBe(Region.Region1);
+    expect(Math.abs(recovered.pressure - pressure) / pressure).toBeLessThan(1e-5);
+    expect(Math.abs(region1(recovered.pressure, T).entropy - forward.entropy)).toBeLessThan(1e-14);
   });
 
   it.each([

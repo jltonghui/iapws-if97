@@ -33,22 +33,23 @@ describe('Public domain round-trip regressions', () => {
     expect(() => solvePH(forward.pressure, forward.enthalpy)).not.toThrow();
   });
 
-  it('accepts the closed PH liquid lower boundary after public pressure rounding', () => {
+  it('accepts the closed PH liquid lower boundary at a non-decimal pressure', () => {
     const forward = solvePT(99.99999999999996, 273.15);
     const recovered = solvePH(forward.pressure, forward.enthalpy);
-    expect(recovered.temperature).toBe(273.15);
+    expectBackwardValue(recovered.temperature, 273.15, 'temperature', 1e-9);
+    expect(recovered.enthalpy).toBe(region1(recovered.pressure, recovered.temperature).enthalpy);
     expectBackwardValue(solvePT(recovered.pressure, recovered.temperature).enthalpy, forward.enthalpy, 'enthalpy');
   });
 
-  it.each([3.0000000000000013, 18.28049948300001, 99.99999999999999])('accepts the closed PS liquid lower boundary after public pressure rounding at p=%s', (p) => {
+  it.each([3.0000000000000013, 18.28049948300001, 99.99999999999999])('accepts the closed PS liquid lower boundary at p=%s', (p) => {
     const forward = solvePT(p, 273.15);
     const input = { mode: 'PS', p: forward.pressure, s: forward.entropy } as const;
     expect(detectRegionPS(input.p, input.s)).toBe(Region.Region1);
     for (const recovered of [solvePS(input.p, input.s), solve(input), solveBasic(input)]) {
       expect(recovered.region).toBe(Region.Region1);
       expect(recovered.pressure).toBe(input.p);
-      expect(recovered.temperature).toBe(273.15);
-      expect(recovered.entropy).toBe(input.s);
+      expectBackwardValue(recovered.temperature, 273.15, 'temperature', 1e-9);
+      expect(recovered.entropy).toBe(region1(recovered.pressure, recovered.temperature).entropy);
       expectBackwardValue(solvePT(input.p, recovered.temperature).entropy, input.s, 'entropy', 1e-14);
     }
   });
@@ -98,7 +99,8 @@ describe('Public domain round-trip regressions', () => {
   });
 
   it('preserves PH/PS liquid states below Pt on the native saturation boundary', () => {
-    const forward = solvePT(0.000611212677444, 273.1500001);
+    const T = 273.1500001;
+    const forward = solvePT(saturationPressure(T), T);
     expect(forward.region).toBe(Region.Region1);
     for (const recovered of [solvePH(forward.pressure, forward.enthalpy), solvePS(forward.pressure, forward.entropy)]) {
       expect(recovered.region).toBe(Region.Region1);
@@ -106,6 +108,10 @@ describe('Public domain round-trip regressions', () => {
       expectBackwardValue(reconstructed.enthalpy, forward.enthalpy, 'enthalpy');
       expectBackwardValue(reconstructed.entropy, forward.entropy, 'entropy');
     }
+  });
+
+  it('keeps vapor above the minimum-temperature saturation boundary', () => {
+    expect(solvePT(P_MIN, 273.1500001).region).toBe(Region.Region2);
   });
 
   it('rejects unsupported sub-triple mixtures through PH/PS', () => {
@@ -398,6 +404,10 @@ describe('Public domain round-trip regressions', () => {
   it.each([1e-10, 1e-9])('rejects an unavailable near-critical PT vapor branch at Tsat + %s K', (offset) => {
     const p = 22.0639999;
     expect(() => solvePT(p, saturationTemperature(p) + offset)).toThrow(IF97Error);
+  });
+
+  it('rejects the reported unavailable PT vapor branch immediately below Tc', () => {
+    expect(() => solvePT(22.0639999999, 647.095999999)).toThrow(IF97Error);
   });
 
   it.each([300, 640, 660, 700])('preserves pure PH/PS states at the inconsistent saturation pressure, T=%s K', (T) => {

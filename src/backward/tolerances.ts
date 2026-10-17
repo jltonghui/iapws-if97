@@ -8,6 +8,7 @@ export function backwardConstraintTolerance(
 ): number {
   switch (label) {
     case 'pressure':
+      return 1e-9 * Math.abs(expected);
     case 'temperature':
       return 1e-9 * Math.max(1, Math.abs(expected));
     case 'enthalpy':
@@ -20,7 +21,7 @@ export function backwardConstraintTolerance(
 }
 
 export function region4SaturationPressureTolerance(pressure: number): number {
-  return 1e-8 * Math.max(1, Math.abs(pressure));
+  return 1e-8 * Math.abs(pressure);
 }
 
 export function backwardSpecificVolumeTolerance(expected: number): number {

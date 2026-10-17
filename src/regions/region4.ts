@@ -7,7 +7,7 @@
  * Reference: IAPWS-IF97, Section 8 (Equations for Region 4)
  */
 
-import { Tc, Pc, P_MIN } from '../constants.js';
+import { Tc, Pc, Tt, Pt, T_MIN, P_MIN } from '../constants.js';
 import { OutOfRangeError } from '../types.js';
 import {
   addExtended, divideExtended, multiplyExtended, sqrtExtended, subtractExtended,
@@ -42,7 +42,12 @@ const n = [
  * @throws {OutOfRangeError} if T is outside valid range
  */
 export function saturationPressure(T: number): number {
-  return normalizeRegion4Pressure(saturationPressurePair(T)[0]);
+  const pressure = saturationPressurePair(T)[0];
+  if (T === T_MIN) return P_MIN;
+  // The fitted equation reaches the rounded triple-point pressure just below Tt.
+  if (T <= Tt && pressure >= Pt) return Pt;
+  if (T === Tc) return Pc;
+  return normalizeRegion4Pressure(pressure);
 }
 
 /** Internal unrounded target: near criticality, one pressure ULP changes endpoint density. */
@@ -81,6 +86,9 @@ export function saturationTemperature(p: number): number {
   if (p < P_MIN || p > Pc) {
     throw new OutOfRangeError('Pressure', p, P_MIN, Pc);
   }
+  if (p === P_MIN) return T_MIN;
+  if (p === Pt) return Tt;
+  if (p === Pc) return Tc;
 
   const beta = sqrtExtended(sqrtExtended([p, 0]));
   const betaSquared = multiplyExtended(beta, beta);
@@ -101,5 +109,5 @@ export function saturationTemperature(p: number): number {
     )),
     [2, 0],
   );
-  return normalizeRegion4Temperature(temperature[0]);
+  return p >= Pt && temperature[0] < Tt ? Tt : normalizeRegion4Temperature(temperature[0]);
 }

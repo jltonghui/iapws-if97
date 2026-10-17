@@ -2,32 +2,21 @@ import { describe, expect, it } from 'vitest';
 import * as api from '../../src/index.js';
 import type { SolveInput, SteamState } from '../../src/index.js';
 import { solve as solveRaw } from '../../src/core/solver.js';
-import { normalizePublicState } from '../../src/core/public-normalization.js';
 import { region1, region2 } from '../../src/regions.js';
 
 const liquid = region1(3, 300);
 const vapor = region2(3, 700);
 
 describe('public density consistency', () => {
-  it.each([
-    { x: 0.0045169174984844, volumeSnaps: true },
-    { x: 0.004537660598538098, volumeSnaps: false },
-  ])('preserves the reciprocal when volumeSnaps=$volumeSnaps', ({ x, volumeSnaps }) => {
+  it.each([0.0045169174984844, 0.004537660598538098])('preserves native volume and its reciprocal at x=%s', (x) => {
     const input = { mode: 'Px', p: 1, x } as const;
     const raw = solveRaw(input);
     const state = api.solvePx(1, x);
 
     expect(raw.density).toBe(1 / raw.specificVolume);
     expect(state.density).toBe(1 / state.specificVolume);
-    if (volumeSnaps) {
-      expect(raw.specificVolume).not.toBe(state.specificVolume);
-      expect(state.specificVolume).toBe(0.002);
-      expect(state.density).toBe(500);
-    } else {
-      expect(state.specificVolume).toBe(raw.specificVolume);
-      expect(state.density).toBe(raw.density);
-    }
-    expect(normalizePublicState(state)).toEqual(state);
+    expect(state.specificVolume).toBe(raw.specificVolume);
+    expect(state.density).toBe(raw.density);
 
     const basic = api.solveBasic(input);
     expect(basic.specificVolume).toBe(state.specificVolume);
@@ -56,6 +45,6 @@ describe('public density consistency', () => {
     expect(directState.density).toBe(1 / directState.specificVolume);
     expect(directState).toEqual(state);
     expect(api.solveBasic(input).specificVolume).toBe(state.specificVolume);
-    expect(normalizePublicState(state)).toEqual(state);
+    expect(state).toEqual(solveRaw(input));
   });
 });

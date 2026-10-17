@@ -8,7 +8,7 @@
 import type { BasicProperties, SaturationEndpoints } from '../types.js';
 import { IF97Error, Region } from '../types.js';
 import { SaturationEndpointError } from '../errors.js';
-import { Pc, Pt, R2_T_MIN, RHOc, Tt } from '../constants.js';
+import { Pc, Pt, P_MIN, R2_T_MIN, RHOc, T_MIN, Tc, Tt } from '../constants.js';
 import { region1 } from '../regions/region1.js';
 import { region2 } from '../regions/region2.js';
 import { region3ByRhoT } from '../regions/region3.js';
@@ -80,11 +80,12 @@ export function rawQualityFromSaturationProperty(
 function buildSaturationEndpoints(pressure: number, temperature: number): SaturationEndpoints {
   // Both caller coordinates must use the same native saturation EOS pair.
   const pressurePair = saturationPressurePair(temperature);
-  const eosPressure = normalizeRegion4Pressure(pressurePair[0]);
+  const eosPressure = temperature === T_MIN ? P_MIN
+    : temperature <= Tt && pressurePair[0] >= Pt ? Pt : normalizeRegion4Pressure(pressurePair[0]);
   const pressureLow = eosPressure === pressurePair[0] ? pressurePair[1] : 0;
   let liquid: BasicProperties;
   let vapor: BasicProperties;
-  if (pressure === Pc) {
+  if (pressure === Pc && temperature === Tc) {
     liquid = vapor = region3ByRhoT(RHOc, temperature);
   } else if (pressure > REGION12_SATURATION_PRESSURE) {
     // Inverse-temperature rounding must not change formula ownership at 623.15 K.
@@ -146,11 +147,8 @@ export function saturationEndpointsAtPressure(p: number): SaturationEndpoints {
  * @param T - Saturation temperature [K]
  */
 export function saturationEndpointsAtTemperature(T: number): SaturationEndpoints {
-  const inputTemperature = normalizeRegion4Temperature(T);
-  const pressure = normalizeRegion4Pressure(saturationPressure(inputTemperature));
-  const temperature = inputTemperature >= Tt && (pressure === Pt || pressure === Pc)
-    ? normalizeRegion4Temperature(saturationTemperature(pressure))
-    : inputTemperature;
+  const temperature = normalizeRegion4Temperature(T);
+  const pressure = saturationPressure(temperature);
   return buildSaturationEndpoints(pressure, temperature);
 }
 

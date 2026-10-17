@@ -243,7 +243,11 @@ function tryRegion4HSEntropyState(h: number, s: number): BasicProperties | null 
   for (const [lower, initialUpper] of intervals) {
     try {
       const lowerValue = evaluate(lower);
-      if (s < lowerValue.liquidEntropy || s > lowerValue.vaporEntropy) continue;
+      if (s < lowerValue.liquidEntropy || s > lowerValue.vaporEntropy) {
+        // Split-EOS endpoint roundoff can exclude a numerically valid root.
+        if (Math.abs(lowerValue.residual) <= C.REGION4_HS_RESIDUAL_TOLERANCE) numericalFailure = true;
+        continue;
+      }
       const highTemperature = lower > C.R2_T_MIN;
       if (highTemperature) criticalInterval = true;
       let upper = initialUpper;
@@ -310,7 +314,7 @@ function tryRegion4HSEntropyState(h: number, s: number): BasicProperties | null 
 
         const midpoint = (inside + outside) / 2;
         if (midpoint === inside || midpoint === outside) {
-          if (Math.abs(value.residual) <= REGION4_HS_ENDPOINT_RESIDUAL_TOLERANCE ||
+          if (Math.abs(value.residual) <= C.REGION4_HS_RESIDUAL_TOLERANCE ||
               (outsideValue !== null && lowerValue.residual * outsideValue.residual <= 0)) {
             numericalFailure = true;
           }

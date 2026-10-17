@@ -7,10 +7,10 @@ import { region3ByRhoT } from '../../src/regions/region3.js';
 import { region5 } from '../../src/regions/region5.js';
 import { saturationPressure, saturationTemperature } from '../../src/regions/region4.js';
 
-/** Assert relative error < tolerance */
-function expectRelClose(actual: number | null, expected: number, tol = 1e-6) {
+/** Assert relative error <= tolerance. */
+function expectRelClose(actual: number | null, expected: number, tol = 1e-8) {
   assert.isNotNull(actual);
-  expect(Math.abs((actual - expected) / expected)).toBeLessThan(tol);
+  expect(Math.abs((actual - expected) / expected)).toBeLessThanOrEqual(tol);
 }
 
 describe('IAPWS-IF97 Verification Tables', () => {

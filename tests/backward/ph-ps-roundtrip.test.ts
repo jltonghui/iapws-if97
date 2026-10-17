@@ -50,13 +50,14 @@ describe('P-H Backward Round-Trip', () => {
     expectRegion4RoundTrip(result, forward, { specificVolumeTolerance: 1e-6 });
   });
 
-  it('preserves the exact pressure and enthalpy inputs', () => {
+  it('returns the native enthalpy at the solved pressure and temperature', () => {
     const p = 3;
     const forward = region1(p, 300);
     const result = solvePH(p, forward.enthalpy);
 
     expect(result.pressure).toBe(p);
-    expect(result.enthalpy).toBe(forward.enthalpy);
+    expect(result.enthalpy).toBe(region1(result.pressure, result.temperature).enthalpy);
+    expect(Math.abs(result.enthalpy - forward.enthalpy)).toBeLessThan(1e-9);
   });
 
   it('throws OutOfRangeError for pressure outside the supported range', async () => {
@@ -105,13 +106,14 @@ describe('P-S Backward Round-Trip', () => {
     expectRegion4RoundTrip(result, forward, { specificVolumeTolerance: 1e-6 });
   });
 
-  it('preserves the exact pressure and entropy inputs', () => {
+  it('returns the native entropy at the solved pressure and temperature', () => {
     const p = 0.0035;
     const forward = region2(p, 700);
     const result = solvePS(p, forward.entropy);
 
     expect(result.pressure).toBe(p);
-    expect(result.entropy).toBe(forward.entropy);
+    expect(result.entropy).toBe(region2(result.pressure, result.temperature).entropy);
+    expect(Math.abs(result.entropy - forward.entropy)).toBeLessThan(1e-12);
   });
 
   it('does not collapse near-saturation Region 3 states into Region 4', () => {

@@ -29,8 +29,8 @@ describe('saturation quality calculation', () => {
     expect(() => saturationEndpointsAtTemperature(temperature)).toThrow(/numerical.*inconsisten/i);
   });
 
-  it('throws when temperature-side normalization collapses saturation endpoints at the critical point', () => {
-    const endpoints = saturationEndpointsAtTemperature(Tc - 2e-9);
+  it('rejects quality from the exact critical-temperature degenerate pair', () => {
+    const endpoints = saturationEndpointsAtTemperature(Tc);
 
     expect(endpoints.pressure).toBe(Pc);
     expect(endpoints.liquid.enthalpy).toBe(endpoints.vapor.enthalpy);
@@ -44,8 +44,8 @@ describe('saturation quality calculation', () => {
     ).toThrow(IF97Error);
   });
 
-  it('throws when pressure-side normalization collapses saturation endpoints at the critical point', () => {
-    const endpoints = saturationEndpointsAtPressure(Pc - 1e-10);
+  it('rejects quality from the exact critical-pressure degenerate pair', () => {
+    const endpoints = saturationEndpointsAtPressure(Pc);
 
     expect(endpoints.pressure).toBe(Pc);
     expect(endpoints.liquid.enthalpy).toBe(endpoints.vapor.enthalpy);
@@ -57,5 +57,12 @@ describe('saturation quality calculation', () => {
         endpoints.liquid.enthalpy,
       ),
     ).toThrow(IF97Error);
+  });
+
+  it.each([
+    () => saturationEndpointsAtTemperature(Tc - 2e-9),
+    () => saturationEndpointsAtPressure(Pc - 1e-10),
+  ])('rejects unavailable subcritical EOS endpoints without replacing them with the critical pair', (solve) => {
+    expect(solve).toThrow(/numerical.*inconsisten/i);
   });
 });

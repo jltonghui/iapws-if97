@@ -39,3 +39,16 @@ export function nativeSaturationTemperatureBracket(p: number): readonly [number,
   }
   return [lower, upper];
 }
+
+/** Invert the native B23 boundary; rounded Eq. (6) cannot determine PT ownership. */
+export function nativeB23TemperatureBracket(p: number): readonly [number, number] {
+  let lower = C.R2_T_MIN;
+  let upper = C.B23_T_MAX;
+  while (true) {
+    const middle = (lower + upper) / 2;
+    if (middle === lower || middle === upper) break;
+    if (boundary23_T_to_P(middle) <= p) lower = middle;
+    else upper = middle;
+  }
+  return [lower, upper];
+}

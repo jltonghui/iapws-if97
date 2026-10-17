@@ -1,10 +1,26 @@
 import { describe, expect, it, vi } from 'vitest';
 import { Region, solveHS, solvePT, solvePx, solveTx } from '../../src/index.js';
+import { detectRegionHS } from '../../src/detect.js';
 import { P_MIN } from '../../src/constants.js';
 import * as region4HS from '../../src/saturation/region4-hs.js';
 import { expectBackwardValue, expectRegion4RoundTrip } from '../helpers/backward-assertions.js';
 
 describe('HS saturation coordinate regressions', () => {
+  it.each([
+    { p: 17.969098460653143, T: 630, x: 1, hTolerance: 1e-7, sTolerance: 1e-10 },
+    { p: 16.529164252605597, T: 623.1500000000001, x: 0, hTolerance: 1e-9, sTolerance: 1e-12 },
+  ])('recovers the PT-derived saturation endpoint at p=$p, T=$T', ({ p, T, x, hTolerance, sTolerance }) => {
+    const forward = solvePT(p, T);
+    expect(forward.region).toBe(Region.Region3);
+    const recovered = solveHS(forward.enthalpy, forward.entropy);
+    expect(recovered.region).toBe(Region.Region4);
+    expect(recovered.quality).toBe(x);
+    expect(detectRegionHS(forward.enthalpy, forward.entropy)).toBe(recovered.region);
+    const checked = solveTx(recovered.temperature, recovered.quality!);
+    expectBackwardValue(checked.enthalpy, forward.enthalpy, 'enthalpy', hTolerance);
+    expectBackwardValue(checked.entropy, forward.entropy, 'entropy', sTolerance);
+  });
+
   it.each([0, 1e-9, 0.01, 0.25, 0.5, 0.75, 0.99, 1 - 1e-9, 1])(
     'recovers the first representable Region 3 saturation temperature at x=%s',
     (x) => {

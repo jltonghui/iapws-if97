@@ -1,12 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import { solveHS, solvePT, solveTx } from '../../src/index.js';
-import { Tc } from '../../src/constants.js';
+import { Tc, Tt } from '../../src/constants.js';
 import { detectRegionHS } from '../../src/detect.js';
 import { saturationPressure, saturationTemperature } from '../../src/regions/region4.js';
 import { IF97Error, Region } from '../../src/types.js';
 import { region3ByRhoT } from '../../src/regions/region3.js';
 import * as saturationCommon from '../../src/saturation/common.js';
 import * as region4HS from '../../src/saturation/region4-hs.js';
+import * as hsState from '../../src/backward/hs-state.js';
 import {
   expectBackwardValue,
   expectRegion4RoundTrip,
@@ -114,5 +115,72 @@ describe('H-S classification next to the saturation boundary', () => {
     expect(raw.isothermalCompressibility).toBeGreaterThan(0);
     expectBackwardValue(raw.enthalpy, h, 'enthalpy', 1e-8);
     expectBackwardValue(raw.entropy, s, 'entropy', 1e-11);
+  });
+});
+
+describe('HS saturation classification near the B23 corner', () => {
+  it.each([
+    { p: 16.528998960962053, T: 623.15 },
+    { p: 16.52896135965548, T: 623.1491 },
+    { p: 16.52896135965548, T: 623.15 },
+  ])('recovers the superheated Region 2 state at p=$p, T=$T', ({ p, T }) => {
+    const forward = solvePT(p, T);
+    expect(forward.region).toBe(Region.Region2);
+    expect(detectRegionHS(forward.enthalpy, forward.entropy)).toBe(Region.Region2);
+    const recovered = solveHS(forward.enthalpy, forward.entropy);
+    expect(recovered.region).toBe(Region.Region2);
+    expectBackwardValue(recovered.pressure, p, 'pressure');
+    expectBackwardValue(recovered.temperature, T, 'temperature');
+    const checked = solvePT(recovered.pressure, recovered.temperature);
+    expectBackwardValue(checked.enthalpy, forward.enthalpy, 'enthalpy', 1e-7);
+    expectBackwardValue(checked.entropy, forward.entropy, 'entropy', 1e-10);
+  });
+
+  it('rejects an HS input below the lower envelope in the disputed entropy zone', () => {
+    const liquid = solveTx(Tt, 0);
+    const vapor = solveTx(Tt, 1);
+    const entropy = 5.210920786823613;
+    const quality = (entropy - liquid.entropy) / (vapor.entropy - liquid.entropy);
+    const enthalpy = liquid.enthalpy + quality * (vapor.enthalpy - liquid.enthalpy) - 1e-7;
+    expect(detectRegionHS(enthalpy, entropy)).toBe(-1);
+    expect(() => solveHS(enthalpy, entropy)).toThrow(IF97Error);
+  });
+
+  it('validates Region 3 when saturation recovery is unavailable', () => {
+    const forward = solvePT(17.969098460653143, 630);
+    const saturation = vi.spyOn(region4HS, 'tryRegion4HSState').mockReturnValue(null);
+    try {
+      expect(detectRegionHS(forward.enthalpy, forward.entropy)).toBe(Region.Region3);
+      const recovered = solveHS(forward.enthalpy, forward.entropy);
+      expect(recovered.region).toBe(Region.Region3);
+      const checked = solvePT(recovered.pressure, recovered.temperature);
+      expectBackwardValue(checked.enthalpy, forward.enthalpy, 'enthalpy', 1e-7);
+      expectBackwardValue(checked.entropy, forward.entropy, 'entropy', 1e-10);
+    } finally {
+      saturation.mockRestore();
+    }
+  });
+
+  it('retains the saturation route when neither single-phase candidate is available', () => {
+    const forward = solvePT(16.528998960962053, 623.15);
+    const candidates = vi.spyOn(hsState, 'solveHSInRegion')
+      .mockImplementation(() => { throw new IF97Error('Unavailable single-phase candidate'); });
+    try {
+      expect(detectRegionHS(forward.enthalpy, forward.entropy)).toBe(Region.Region4);
+    } finally {
+      candidates.mockRestore();
+    }
+  });
+
+  it('propagates unexpected errors from candidate validation', () => {
+    const forward = solvePT(16.528998960962053, 623.15);
+    const error = new Error('Unexpected candidate failure');
+    const candidates = vi.spyOn(hsState, 'solveHSInRegion')
+      .mockImplementation(() => { throw error; });
+    try {
+      expect(() => detectRegionHS(forward.enthalpy, forward.entropy)).toThrow(error);
+    } finally {
+      candidates.mockRestore();
+    }
   });
 });

@@ -3,55 +3,38 @@
  *
  * Public API exports.
  */
-import type { BasicProperties, SteamState, SolveInput } from './types.js';
-import { solve as solveAny, solveBasic as solveBasicInternal, solvePT as solvePTInternal } from './core/solver.js';
-import { normalizePublicState } from './core/public-normalization.js';
-
-function normalizeSteamState(state: SteamState): SteamState {
-  return normalizePublicState(state);
-}
+import type { SteamState } from './types.js';
+import { solve as solveAny } from './core/solver.js';
 
 // Core solvers
-// Normalize only at the public package boundary so internal solver math
-// keeps full raw precision during iteration and region transitions.
-export function solvePT(p: number, T: number): SteamState {
-  return normalizeSteamState(solvePTInternal(p, T));
-}
-
-export function solve(input: SolveInput): SteamState {
-  return normalizeSteamState(solveAny(input));
-}
-
-export function solveBasic(input: SolveInput): BasicProperties {
-  return normalizePublicState(solveBasicInternal(input));
-}
+export { solve, solveBasic, solvePT } from './core/solver.js';
 
 export function solvePH(p: number, h: number): SteamState {
-  return normalizeSteamState(solveAny({ mode: 'PH', p, h }));
+  return solveAny({ mode: 'PH', p, h });
 }
 
 export function solvePS(p: number, s: number): SteamState {
-  return normalizeSteamState(solveAny({ mode: 'PS', p, s }));
+  return solveAny({ mode: 'PS', p, s });
 }
 
 export function solveHS(h: number, s: number): SteamState {
-  return normalizeSteamState(solveAny({ mode: 'HS', h, s }));
+  return solveAny({ mode: 'HS', h, s });
 }
 
 export function solveTH(T: number, h: number): SteamState {
-  return normalizeSteamState(solveAny({ mode: 'TH', T, h }));
+  return solveAny({ mode: 'TH', T, h });
 }
 
 export function solveTS(T: number, s: number): SteamState {
-  return normalizeSteamState(solveAny({ mode: 'TS', T, s }));
+  return solveAny({ mode: 'TS', T, s });
 }
 
 export function solvePx(p: number, x: number): SteamState {
-  return normalizeSteamState(solveAny({ mode: 'Px', p, x }));
+  return solveAny({ mode: 'Px', p, x });
 }
 
 export function solveTx(T: number, x: number): SteamState {
-  return normalizeSteamState(solveAny({ mode: 'Tx', T, x }));
+  return solveAny({ mode: 'Tx', T, x });
 }
 
 // Types

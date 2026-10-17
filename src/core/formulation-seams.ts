@@ -8,6 +8,7 @@ import { saturationPressure } from '../regions/region4.js';
 import { bracketedNewton } from '../solvers/bracketed-newton.js';
 import { gibbsPropertyDerivatives } from './thermodynamic-derivatives.js';
 import { solveRegion3PTBasic } from './region3-pt.js';
+import { nativeB23TemperatureBracket } from './region-detector.js';
 
 export type FormulationSeam = '13' | '23' | '25';
 
@@ -28,19 +29,8 @@ export interface FormulationSeamResolution {
   budgets: { enthalpy: number; entropy: number };
 }
 
-function nativeB23Temperature(p: number): number {
-  let lower = C.R2_T_MIN;
-  let upper = C.B23_T_MAX;
-  while (true) {
-    const middle = (lower + upper) / 2;
-    if (middle === lower || middle === upper) return lower;
-    if (boundary23_T_to_P(middle) <= p) lower = middle;
-    else upper = middle;
-  }
-}
-
 function pairAt(seam: FormulationSeam, p: number, T: number): FormulationSeamPair {
-  const r3 = (): BasicProperties => ({ ...solveRegion3PTBasic(p, T), pressure: p });
+  const r3 = (): BasicProperties => solveRegion3PTBasic(p, T);
   const lower = seam === '13' ? region1(p, T) : seam === '23' ? r3() : region2(p, T);
   const upper = seam === '13' ? r3() : seam === '23' ? region2(p, T) : region5(p, T);
   return {
@@ -54,8 +44,8 @@ export function formulationSeamAtPressure(p: number, seam: FormulationSeam): For
   if (seam === '25') return p <= C.R5_P_MAX ? pairAt(seam, p, C.R2_T_MAX) : null;
   if (p <= C.B23_P_MIN) return null;
   if (seam === '13') return p > saturationPressure(C.R2_T_MIN) ? pairAt(seam, p, C.R2_T_MIN) : null;
-  const T = nativeB23Temperature(p);
-  return T < C.Tc && p >= saturationPressure(T) ? null : pairAt(seam, p, T);
+  const [T] = nativeB23TemperatureBracket(p);
+  return T <= C.R2_T_MIN || (T < C.Tc && p >= saturationPressure(T)) ? null : pairAt(seam, p, T);
 }
 
 /** B13/B25 cannot be crossed while retaining an independently supplied temperature. */
@@ -79,7 +69,7 @@ export function findPressureSeam(
       if (p <= saturationPressure(C.R2_T_MIN)) continue;
       reference = region1(p, C.R2_T_MIN);
     } else if (seam === '23') {
-      const T = nativeB23Temperature(p);
+      const [T] = nativeB23TemperatureBracket(p);
       if (T < C.Tc && p >= saturationPressure(T)) continue;
       reference = region2(p, T);
     } else {
@@ -200,7 +190,7 @@ function hsSeamDomains(): HSSeamDomain[] {
     const lower = seam === '25' ? C.P_MIN : seam === '13'
       ? nextFloat(saturationPressure(C.R2_T_MIN), 1) : b23LowerTemperature();
     const upper = seam === '25' ? C.R5_P_MAX : seam === '13'
-      ? C.P_MAX : nativeB23Temperature(C.P_MAX);
+      ? C.P_MAX : nativeB23TemperatureBracket(C.P_MAX)[0];
     const nodes = [lower, upper];
     {
       // Partition both equations at their folds before inverting either property.

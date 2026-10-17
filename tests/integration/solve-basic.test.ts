@@ -4,6 +4,8 @@ import type { BasicProperties, SolveInput } from '../../src/index.js';
 import * as transport from '../../src/transport/properties.js';
 import { region1, region2 } from '../../src/regions.js';
 import { P_MIN, Pc, Tc } from '../../src/constants.js';
+import { solvePH } from '../../src/backward/ph.js';
+import { solvePS } from '../../src/backward/ps.js';
 
 vi.mock('../../src/transport/properties.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/transport/properties.js')>();
@@ -36,6 +38,10 @@ describe('solveBasic', () => {
     { input: { mode: 'PT', p: 0.5, T: 1500 }, direct: () => api.solvePT(0.5, 1500) },
     { input: { mode: 'PH', p: 3, h: liquid.enthalpy }, direct: () => api.solvePH(3, liquid.enthalpy) },
     { input: { mode: 'PS', p: 3, s: liquid.entropy }, direct: () => api.solvePS(3, liquid.entropy) },
+    { input: { mode: 'PH', p: Pc, h: 2000 }, direct: () => api.solvePH(Pc, 2000) },
+    { input: { mode: 'PH', p: Pc, h: 2200 }, direct: () => api.solvePH(Pc, 2200) },
+    { input: { mode: 'PS', p: Pc, s: 4.3 }, direct: () => api.solvePS(Pc, 4.3) },
+    { input: { mode: 'PS', p: Pc, s: 4.5 }, direct: () => api.solvePS(Pc, 4.5) },
     { input: { mode: 'HS', h: liquid.enthalpy, s: liquid.entropy }, direct: () => api.solveHS(liquid.enthalpy, liquid.entropy) },
     { input: { mode: 'TH', T: 700, h: vapor.enthalpy }, direct: () => api.solveTH(700, vapor.enthalpy) },
     { input: { mode: 'TS', T: 700, s: vapor.entropy }, direct: () => api.solveTS(700, vapor.entropy) },
@@ -59,10 +65,10 @@ describe('solveBasic', () => {
     expect(direct()).toEqual(full);
   });
 
-  it('accepts long-form aliases and applies public numeric normalization', () => {
+  it('accepts long-form aliases and preserves native properties', () => {
     const basic = api.solveBasic({ mode: 'PH', pressure: 3, enthalpy: liquid.enthalpy });
 
-    expect(basic.temperature).toBe(300);
+    expect(basic.enthalpy).toBe(region1(basic.pressure, basic.temperature).enthalpy);
     expect(basic).toEqual(api.solveBasic({ mode: 'PH', p: 3, h: liquid.enthalpy }));
     expectNoTransportCalls();
   });
@@ -90,6 +96,22 @@ describe('solveBasic', () => {
   ] satisfies SolveInput[])('preserves full solver validation for %j', (input) => {
     expect(() => api.solveBasic(input)).toThrow(api.IF97Error);
     expect(() => api.solve(input)).toThrow(api.IF97Error);
+    expectNoTransportCalls();
+  });
+
+  it.each([
+    { mode: 'PH', p: Pc, h: 2087.5468 },
+    { mode: 'PS', p: Pc, s: 4.41202 },
+  ] as const)('rejects an unstable Region 3 $mode state before evaluating transport', (input) => {
+    const direct = input.mode === 'PH'
+      ? [() => solvePH(input.p, input.h), () => api.solvePH(input.p, input.h)]
+      : [() => solvePS(input.p, input.s), () => api.solvePS(input.p, input.s)];
+    for (const run of [...direct, () => api.solveBasic(input), () => api.solve(input)]) {
+      expect(run).toThrowError(expect.objectContaining({
+        name: 'IF97Error',
+        message: expect.stringMatching(new RegExp(`solve${input.mode}.*Region 3 numerical inconsistency`)),
+      }));
+    }
     expectNoTransportCalls();
   });
 

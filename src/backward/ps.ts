@@ -13,7 +13,7 @@ import { region2 } from '../regions/region2.js';
 import { region3ByRhoT } from '../regions/region3.js';
 import { region5 } from '../regions/region5.js';
 import { assertFiniteNumber, withinClosedLowerBound } from '../core/input-validation.js';
-import { detectRegionPS, pressurePropertySeam } from './pressure-property-region.js';
+import { assertPressurePropertyEnvelope, detectRegionPS, pressurePropertySeam } from './pressure-property-region.js';
 import { newtonRaphson } from '../solvers/newton-raphson.js';
 import { bracketedNewton } from '../solvers/bracketed-newton.js';
 import { dampedNewton2D } from '../solvers/damped-newton-2d.js';
@@ -47,7 +47,7 @@ const R1_PS: CoefficientTable = [
   [4,32,-3.0732199903668e-31],
 ] as const;
 
-function r1BackwardT(p: number, s: number): number {
+export function r1BackwardT(p: number, s: number): number {
   return evalPoly(R1_PS, 0, -2, p, s);
 }
 
@@ -103,7 +103,7 @@ const R2C_PS: CoefficientTable = [
   [7,3,-2.0874278181886e-11],[7,4,1.0162166825089e-10],[7,5,-1.6429828281347e-10],
 ] as const;
 
-function r2BackwardT(p: number, s: number): number {
+export function r2BackwardT(p: number, s: number): number {
   if (p <= C.R2_P_CRT) {
     return evalPoly(R2A_PS, 0, 2, p, s / 2);
   }
@@ -169,6 +169,18 @@ const R3B_PS_V_TABLE: CoefficientTable = [
   [2,2,-3.2747778718823],
 ] as const;
 
+export function r3BackwardPSInitial(p: number, s: number): { rho: number; T: number } {
+  if (s <= C.R3_S_CRT) {
+    const T = 760 * evalPoly(R3A_PS_T_TABLE, -0.240, 0.703, p / 100, s / 4.4);
+    const v = 0.0028 * evalPoly(R3A_PS_V_TABLE, -0.187, 0.755, p / 100, s / 4.4);
+    return { rho: 1 / v, T };
+  }
+
+  const T = 860 * evalPoly(R3B_PS_T_TABLE, -0.760, 0.818, p / 100, s / 5.3);
+  const v = 0.0088 * evalPoly(R3B_PS_V_TABLE, -0.298, 0.816, p / 100, s / 5.3);
+  return { rho: 1 / v, T };
+}
+
 function solveRegion3PS(p: number, s: number, rho0: number, T0: number): BasicProperties {
   const pScale = Math.max(1, Math.abs(p));
   const sScale = Math.max(1, Math.abs(s));
@@ -211,6 +223,7 @@ export function solvePS(p: number, s: number): BasicProperties {
     throw new OutOfRangeError('Entropy', s, C.S_MIN, C.S_MAX);
   }
   assertCriticalRegion4PSInput(p, s, 'solvePS');
+  assertPressurePropertyEnvelope(p, s, 'entropy');
 
   const seam = pressurePropertySeam(p, s, 'entropy');
   if (seam !== null && seam.kind !== 'overlap') {
@@ -269,15 +282,8 @@ export function solvePS(p: number, s: number): BasicProperties {
     case Region.Region3: {
       try {
         const pressureTolerance = 1e-5 * Math.max(1, Math.abs(p));
-        let T0: number, v0: number;
-        if (s <= C.R3_S_CRT) {
-          T0 = 760 * evalPoly(R3A_PS_T_TABLE, -0.240, 0.703, p / 100, s / 4.4);
-          v0 = 0.0028 * evalPoly(R3A_PS_V_TABLE, -0.187, 0.755, p / 100, s / 4.4);
-        } else {
-          T0 = 860 * evalPoly(R3B_PS_T_TABLE, -0.760, 0.818, p / 100, s / 5.3);
-          v0 = 0.0088 * evalPoly(R3B_PS_V_TABLE, -0.298, 0.816, p / 100, s / 5.3);
-        }
-        const state = solveRegion3PS(p, s, 1 / v0, T0);
+        const initial = r3BackwardPSInitial(p, s);
+        const state = solveRegion3PS(p, s, initial.rho, initial.T);
         const validated = validateBackwardState(
           state,
           [

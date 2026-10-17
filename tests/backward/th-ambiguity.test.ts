@@ -166,7 +166,7 @@ describe('TH uniqueness', () => {
     const recovered = solveTH(T, h);
 
     expect(recovered.region).toBe(Region.Region3);
-    expect(recovered.enthalpy).toBe(h);
+    expectBackwardValue(recovered.enthalpy, h, 'enthalpy', 1e-9);
     expect(recovered.density).toBeGreaterThan(322);
     expectBackwardValue(solvePT(recovered.pressure, T).enthalpy, h, 'enthalpy');
   });
@@ -176,14 +176,14 @@ describe('TH uniqueness', () => {
     const recovered = solveTH(wet.temperature, wet.enthalpy);
 
     expectRegion4RoundTrip(recovered, wet);
-    expect(recovered.enthalpy).toBe(wet.enthalpy);
+    expectBackwardValue(recovered.enthalpy, wet.enthalpy, 'enthalpy', 1e-9);
   });
 
   it.each([650, 700])('prefers the owned root only in a B23 overlap at T=%s K', (T) => {
     const h = region2(boundary23_T_to_P(T), T).enthalpy + 5e-10;
     const recovered = solveTH(T, h);
     expect(recovered.region).toBe(T === 650 ? Region.Region3 : Region.Region2);
-    expect(recovered.enthalpy).toBe(h);
+    expectBackwardValue(recovered.enthalpy, h, 'enthalpy', 1e-9);
     expectBackwardValue(solvePT(recovered.pressure, T).enthalpy, h, 'enthalpy');
   });
 
@@ -208,7 +208,7 @@ describe('TH uniqueness', () => {
     expect(forward.region).toBe(Region.Region2);
     expect(recovered.region).toBe(forward.region);
     expect(recovered.pressure).toBeLessThan(saturationPressure(T));
-    expect(recovered.enthalpy).toBe(forward.enthalpy);
+    expectBackwardValue(recovered.enthalpy, forward.enthalpy, 'enthalpy', 1e-9);
     expectBackwardValue(solvePT(recovered.pressure, T).enthalpy, forward.enthalpy, 'enthalpy');
   });
 
@@ -223,7 +223,7 @@ describe('TH uniqueness', () => {
     expect(forward.region).toBe(Region.Region2);
     expect(recovered.region).toBe(forward.region);
     expect(recovered.pressure).toBeLessThan(boundary);
-    expect(recovered.enthalpy).toBe(forward.enthalpy);
+    expectBackwardValue(recovered.enthalpy, forward.enthalpy, 'enthalpy', 1e-9);
   });
 
   it('distinguishes no physical root from ambiguity', () => {

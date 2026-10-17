@@ -1,6 +1,7 @@
 /** Public region-detection helper exports. */
 import { uniqueFixedTemperatureState } from './backward/fixed-temperature-candidates.js';
 import type { Region } from './types.js';
+import { OutOfRangeError } from './types.js';
 
 export { detectRegionPT } from './core/region-detector.js';
 export { detectRegionPH, detectRegionPS } from './backward/pressure-property-region.js';
@@ -13,7 +14,12 @@ export { detectRegionHS } from './backward/hs-region.js';
  * @throws {IF97Error} if numerical state construction fails, including near-critical saturation endpoints
  */
 export function detectRegionTH(T: number, h: number): Region | -1 {
-  return uniqueFixedTemperatureState(T, h, 'enthalpy')?.region ?? -1;
+  try {
+    return uniqueFixedTemperatureState(T, h, 'enthalpy')?.region ?? -1;
+  } catch (error) {
+    if (error instanceof OutOfRangeError) return -1;
+    throw error;
+  }
 }
 
 /**
@@ -23,5 +29,10 @@ export function detectRegionTH(T: number, h: number): Region | -1 {
  * @throws {IF97Error} if numerical state construction fails, including near-critical saturation endpoints
  */
 export function detectRegionTS(T: number, s: number): Region | -1 {
-  return uniqueFixedTemperatureState(T, s, 'entropy')?.region ?? -1;
+  try {
+    return uniqueFixedTemperatureState(T, s, 'entropy')?.region ?? -1;
+  } catch (error) {
+    if (error instanceof OutOfRangeError) return -1;
+    throw error;
+  }
 }

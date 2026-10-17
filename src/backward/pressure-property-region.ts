@@ -1,15 +1,32 @@
 import * as C from '../constants.js';
 import { SaturationEndpointError } from '../errors.js';
 import { saturationTemperature } from '../regions/region4.js';
-import { boundary23_P_to_T } from '../regions/boundaries.js';
 import { region1 } from '../regions/region1.js';
 import { region2 } from '../regions/region2.js';
 import { region5 } from '../regions/region5.js';
 import { saturationEndpointsAtPressure } from '../saturation/common.js';
-import { Region } from '../types.js';
-import { nativeSaturationTemperatureBracket } from '../core/region-detector.js';
+import { OutOfRangeError, Region } from '../types.js';
+import { nativeB23TemperatureBracket, nativeSaturationTemperatureBracket } from '../core/region-detector.js';
 import { withinClosedLowerBound } from '../core/input-validation.js';
 import { findPressureSeam, type FormulationSeamResolution } from '../core/formulation-seams.js';
+
+/** Reject proven fixed-pressure envelope violations without classifying interior gaps. */
+export function assertPressurePropertyEnvelope(
+  p: number,
+  target: number,
+  property: 'enthalpy' | 'entropy',
+): void {
+  const minimum = region1(p, C.T_MIN)[property];
+  const maximum = (p <= C.R5_P_MAX ? region5(p, C.R5_T_MAX) : region2(p, C.R2_T_MAX))[property];
+  const aboveMinimum = property === 'enthalpy'
+    ? target >= minimum || isClose(target, minimum)
+    : withinClosedLowerBound(target, minimum);
+  if (!aboveMinimum || !withinClosedUpperBound(target, maximum)) {
+    throw new OutOfRangeError(
+      `${property === 'enthalpy' ? 'Enthalpy' : 'Entropy'} at p=${p} MPa`, target, minimum, maximum,
+    );
+  }
+}
 
 /** Share the fixed-pressure seam policy between detectors and backward solvers. */
 export function pressurePropertySeam(
@@ -45,6 +62,7 @@ function detectRegionPressureProperty(
   target: number,
   property: 'enthalpy' | 'entropy',
 ): Region | -1 {
+  if (!Number.isFinite(p) || !Number.isFinite(target)) return -1;
   const seam = pressurePropertySeam(p, target, property);
   if (seam !== null) return seam.state.region;
   // Preserve PH's existing lower-bound tolerance; PS absorbs only public rounding noise.
@@ -73,7 +91,8 @@ function detectRegionPressureProperty(
   } else if (p > C.B23_P_MIN && p <= C.P_MAX) {
     const lower = region1(p, C.T_MIN)[property];
     const boundary13 = region1(p, C.R2_T_MIN)[property];
-    const boundary32 = region2(p, boundary23_P_to_T(p))[property];
+    const [, region2T] = nativeB23TemperatureBracket(p);
+    const boundary32 = region2(p, region2T)[property];
     const boundary25 = region2(p, C.R2_T_MAX)[property];
 
     if (p < C.Pc) {
@@ -108,7 +127,7 @@ function detectRegionPressureProperty(
   return -1;
 }
 
-// Match public normalization's machine-noise window only at closed upper bounds.
+// Accept floating-point residue only at closed upper bounds.
 function withinClosedUpperBound(value: number, boundary: number): boolean {
   return value <= boundary + 8 * Number.EPSILON * Math.max(1, Math.abs(boundary));
 }

@@ -1,6 +1,6 @@
 import * as C from '../constants.js';
 import { createFixedTemperatureStationaryPressureFinder } from './fixed-temperature-stationary.js';
-import { solveHSSeam } from './hs-state.js';
+import { solveHSInRegion, solveHSSeam } from './hs-state.js';
 import { helmholtzPropertyDerivatives } from '../core/thermodynamic-derivatives.js';
 import { boundary23_T_to_P } from '../regions/boundaries.js';
 import { region1 } from '../regions/region1.js';
@@ -27,7 +27,7 @@ function isClose(a: number, b: number): boolean {
  * Saturated liquid enthalpy boundary for Region 1 (Eq. 3).
  * h'_1(s)
  */
-function h1Sat(s: number): number {
+export function h1Sat(s: number): number {
   const TABLE: CoefficientTable = [
     [0,14,0.332171191705237],[0,36,6.11217706323497e-4],[1,3,-8.82092478906822],
     [1,16,-0.45562819254325],[2,0,-2.63483840850452e-5],[2,5,-22.3949661148062],
@@ -76,7 +76,7 @@ function h1UpperBoundAtPmax(s: number): number {
  * Region 1 / Region 3 boundary enthalpy (Eq. 1, B13).
  * h_13(s)
  */
-function h13Boundary(s: number): number {
+export function h13Boundary(s: number): number {
   const TABLE: CoefficientTable = [
     [0,0,0.913965547600543],[1,-2,-0.0000430944856041991],[1,2,60.3235694765419],
     [3,-12,1.17518273082168e-18],[5,-4,0.220000904781292],[6,-3,-69.0815545851641],
@@ -93,7 +93,7 @@ function h13Boundary(s: number): number {
  * Region 3a / Region 4 saturation boundary (Eq. 4).
  * h'_3a(s)
  */
-function h3aSat(s: number): number {
+export function h3aSat(s: number): number {
   const TABLE: CoefficientTable = [
     [0,1,0.822673364673336],[0,4,0.181977213534479],[0,10,-0.0112000260313624],
     [0,16,-7.46778287048033e-4],[2,1,-0.179046263257381],[3,36,0.0424220110836657],
@@ -115,7 +115,7 @@ function h3aSat(s: number): number {
  * Region 2ab / Region 4 saturation boundary (Eq. 5).
  * h"_2ab(s)
  */
-function h2abSat(s: number): number {
+export function h2abSat(s: number): number {
   const TABLE: CoefficientTable = [
     [1,8,-524.581170928788],[1,24,-9269471.88142218],[2,4,-237.385107491666],
     [2,32,2.10770155812776e10],[4,1,-23.9494562010986],[4,2,221.802480294197],
@@ -141,7 +141,7 @@ function h2abSat(s: number): number {
  * Region 2c / Region 3b saturation boundary (Eq. 6).
  * h"_2c3b(s)
  */
-function h2c3bSat(s: number): number {
+export function h2c3bSat(s: number): number {
   const TABLE: CoefficientTable = [
     [0,0,1.04351280732769],[0,3,-2.27807912708513],[0,4,1.80535256723202],
     [1,0,0.420440834792042],[1,12,-1.0572124483466e5],[5,36,4.36911607493884e24],
@@ -162,7 +162,7 @@ function h2c3bSat(s: number): number {
  * Region 2/3 boundary temperature from h,s (Eq. 8).
  * T_B23(h,s)
  */
-function tB23hs(h: number, s: number): number {
+export function tB23hs(h: number, s: number): number {
   const TABLE: CoefficientTable = [
     [-12,10,6.2909626082981e-4],[-10,8,-8.23453502583165e-4],[-8,3,5.15446951519474e-8],
     [-4,4,-1.17565945784945],[-3,3,3.48519684726192],[-2,-6,-5.07837382408313e-12],
@@ -186,7 +186,7 @@ function tB23hs(h: number, s: number): number {
 /**
  * Backward equation P(h,s) for Region 2c (used for R2/R3 discrimination).
  */
-function backward2cPhs(h: number, s: number): number {
+export function backward2cPhs(h: number, s: number): number {
   const TABLE: CoefficientTable = [
     [0,0,0.112225607199012],[0,1,-3.39005953606712],[0,2,-32.0503911730094],
     [0,3,-197.5973051049],[0,4,-407.693861553446],[0,8,13294.3775222331],
@@ -288,7 +288,7 @@ function hsBoundaryAtEntropy(
   const slope = Math.abs(isobar
     ? state.temperature
     : state.temperature - 1 / (state.isobaricExpansion ?? Number.NaN));
-  // Propagate inversion precision and public normalization noise through dh/ds.
+  // Propagate inversion precision and floating-point residue through dh/ds.
   const tolerance = slope * Math.max(entropyTolerance, Math.abs(state.entropy - s)) + 8 * Number.EPSILON * (
     Math.max(1, Math.abs(state.enthalpy)) + slope * Math.max(1, Math.abs(s))
   );
@@ -704,7 +704,17 @@ export function classifyRegionHS(h: number, s: number): Region | -1 {
     const h23max = HS_R2_B23_MAX.enthalpy;
     const h23min = HS_R2_B23_MIN.enthalpy;
 
-    if (confirmedRegion4BoundaryState(h, s, approximateHs) === true) return Region.Region4;
+    const confirmedRegion4 = confirmedRegion4BoundaryState(h, s, approximateHs);
+    if (confirmedRegion4 === true) return Region.Region4;
+    if (confirmedRegion4 === false && h >= hmin) {
+      for (const region of [Region.Region2, Region.Region3]) {
+        try {
+          return solveHSInRegion(h, s, region).region;
+        } catch (error) {
+          if (!(error instanceof IF97Error)) throw error;
+        }
+      }
+    }
     if (hmin <= h && h <= hs) return Region.Region4;
     if (hs <= h && h < h23min) return Region.Region3;
     if (h23min <= h && h < h23max) {
@@ -776,6 +786,7 @@ export function classifyRegionHS(h: number, s: number): Region | -1 {
  * @returns Region number (1–5) or -1 if out of range
  */
 export function detectRegionHS(h: number, s: number): Region | -1 {
+  if (!Number.isFinite(h) || !Number.isFinite(s)) return -1;
   try {
     return classifyRegionHS(h, s);
   } catch (error) {

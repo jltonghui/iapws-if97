@@ -121,12 +121,15 @@ describe('solveHS backward equations', () => {
     expectBackwardValue(back.pressure, 25, 'pressure');
   });
 
-  it('preserves the exact enthalpy and entropy inputs', () => {
+  it('returns native enthalpy and entropy at the solved pressure and temperature', () => {
     const forward = region2(30, 700);
     const backward = solveHS(forward.enthalpy, forward.entropy);
 
-    expect(backward.enthalpy).toBe(forward.enthalpy);
-    expect(backward.entropy).toBe(forward.entropy);
+    const reconstructed = region2(backward.pressure, backward.temperature);
+    expect(backward.enthalpy).toBe(reconstructed.enthalpy);
+    expect(backward.entropy).toBe(reconstructed.entropy);
+    expectBackwardValue(backward.enthalpy, forward.enthalpy, 'enthalpy');
+    expectBackwardValue(backward.entropy, forward.entropy, 'entropy');
   });
 
   it('R4: two-phase at 1 MPa, x=0.5', () => {

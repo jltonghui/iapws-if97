@@ -1,8 +1,31 @@
 import { describe, expect, it } from 'vitest';
 import { region3PressureResidual } from '../../src/regions/region3.js';
 import { saturationPressure, saturationPressurePair, saturationTemperature } from '../../src/regions/region4.js';
+import { P_MIN, Pc, Pt, T_MIN, Tc, Tt } from '../../src/constants.js';
 
 describe('Region 4 equation precision', () => {
+  it.each([273.15000000000003, 273.15002, 273.16001, 273.16002])('retains native pressure near a lower endpoint at T=%s', (T) => {
+    expect(saturationPressure(T)).toBe(saturationPressurePair(T)[0]);
+  });
+
+  it.each([[T_MIN, P_MIN], [Tt, Pt], [Tc, Pc]])('maps the exact endpoint T=%s, p=%s in both directions', (T, p) => {
+    expect(saturationPressure(T)).toBe(p);
+    expect(saturationTemperature(p)).toBe(T);
+  });
+
+  it('keeps the measured native triple-point fit gap monotone', () => {
+    const bits = new BigUint64Array(new Float64Array([Tt]).buffer);
+    bits[0] -= 1n;
+    const lower = new Float64Array(bits.buffer)[0];
+    bits[0] += 2n;
+    const upper = new Float64Array(bits.buffer)[0];
+    expect(saturationPressurePair(Tt)[0]).toBe(0.0006116570000106673);
+    expect(saturationPressurePair(lower)[0]).toBeGreaterThan(Pt);
+    expect(saturationPressure(lower)).toBe(Pt);
+    expect(saturationPressure(upper)).toBeGreaterThan(Pt);
+    expect(saturationTemperature((Pt + saturationPressurePair(Tt)[0]) / 2)).toBe(Tt);
+  });
+
   // 100-digit references use the exact binary64 coefficient and input values.
   // These interior points do not use the existing triple/critical endpoint snaps.
   it.each([

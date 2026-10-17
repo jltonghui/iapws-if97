@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { P_MIN, R2_T_MAX, R5_T_MAX } from '../../src/constants.js';
 import { detectRegionPH, detectRegionPS } from '../../src/detect.js';
-import { Region, solve, solvePH, solvePS, solvePT, type SteamState } from '../../src/index.js';
+import { OutOfRangeError, Region, solve, solvePH, solvePS, solvePT, type SteamState } from '../../src/index.js';
 import { region2 } from '../../src/regions/region2.js';
 import { region5 } from '../../src/regions/region5.js';
 import { expectBackwardValue } from '../helpers/backward-assertions.js';
@@ -75,13 +75,13 @@ describe.each(modes)('Region 2/5 $name boundaries', ({
   it.each([1, 30, 50])('rejects input above the local Region 5 Tmax at p=%s MPa', (p) => {
     const value = region5(p, R5_T_MAX)[property] + upperExcess;
     expect(detect(p, value)).toBe(-1);
-    expect(() => backward(p, value)).toThrow(/^Cannot determine region for /);
+    expect(() => backward(p, value)).toThrow(OutOfRangeError);
   });
 
   it('rejects meaningful excess above Region 5 Tmax despite temperature snapping tolerance', () => {
     const value = region5(50, R5_T_MAX)[property] + smallExcess;
     expect(detect(50, value)).toBe(-1);
-    expect(() => backward(50, value)).toThrow(/^Cannot determine region for /);
+    expect(() => backward(50, value)).toThrow(OutOfRangeError);
   });
 
   it('snaps a small input residual inside the local numerical seam gap', () => {
@@ -94,7 +94,7 @@ describe.each(modes)('Region 2/5 $name boundaries', ({
   it.each([55.3, 100])('uses the Region 2 ceiling above 50 MPa at p=%s MPa', (p) => {
     const value = region2(p, R2_T_MAX)[property] + upperExcess;
     expect(detect(p, value)).toBe(-1);
-    expect(() => backward(p, value)).toThrow(/^Cannot determine region for /);
+    expect(() => backward(p, value)).toThrow(OutOfRangeError);
   });
 
   it.each(overlapPressures)('preserves Region 2 priority in the seam overlap at p=%s MPa', (p) => {

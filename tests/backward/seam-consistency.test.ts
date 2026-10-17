@@ -43,6 +43,26 @@ function expectLocalResidual(
 }
 
 describe('formulation seam consistency', () => {
+  it.each(['PH', 'PS'] as const)('preserves the saturated vapor endpoint at the 623.15 K corner in %s', (mode) => {
+    const forward = solvePT(16.52916425260358, 623.15);
+    expect(forward.region).toBe(Region.Region2);
+    const detected = mode === 'PH'
+      ? detectRegionPH(forward.pressure, forward.enthalpy)
+      : detectRegionPS(forward.pressure, forward.entropy);
+    expect(detected).toBe(Region.Region4);
+    const state = mode === 'PH'
+      ? solvePH(forward.pressure, forward.enthalpy)
+      : solvePS(forward.pressure, forward.entropy);
+    expect(state.region).toBe(Region.Region4);
+    expect(state.quality).toBe(1);
+    expect(state.pressure).toBe(forward.pressure);
+    if (mode === 'PH') expect(Math.abs(state.enthalpy - forward.enthalpy)).toBeLessThan(1e-7);
+    else expect(Math.abs(state.entropy - forward.entropy)).toBeLessThan(1e-10);
+    const vapor = region2(state.pressure, state.temperature);
+    expect(Math.abs(state.enthalpy - vapor.enthalpy)).toBeLessThan(1e-7);
+    expect(Math.abs(state.entropy - vapor.entropy)).toBeLessThan(1e-10);
+  });
+
   it.each([650, 660, 700, 750, 800, 850])('resolves B23 numerical overlaps and gaps at T=%s K', (T) => {
     const p = boundary23_T_to_P(T);
     const r2 = region2(p, T);
@@ -63,11 +83,11 @@ describe('formulation seam consistency', () => {
     expectLocalResidual(fromHS, { enthalpy: h, entropy: s }, r2, r3);
     expect(fromTH.temperature).toBe(T);
     expect(fromTS.temperature).toBe(T);
-    expect(fromPH.pressure).toBe(p);
-    expect(fromPS.pressure).toBe(p);
+    expect(Math.abs(fromPH.pressure - p)).toBeLessThanOrEqual(1e-9 * p);
+    expect(Math.abs(fromPS.pressure - p)).toBeLessThanOrEqual(1e-9 * p);
     if (r3.enthalpy > r2.enthalpy) {
       expect(Math.abs(fromTH.enthalpy - h)).toBeLessThan(1e-8);
-      expect(Math.abs(fromPH.enthalpy - h)).toBeLessThan(1e-8);
+      expect(Math.abs(fromPH.enthalpy - h)).toBeLessThan(1e-7);
       expect(Math.abs(fromTS.entropy - s)).toBeLessThan(1e-11);
       expect(Math.abs(fromPS.entropy - s)).toBeLessThan(1e-11);
     } else {

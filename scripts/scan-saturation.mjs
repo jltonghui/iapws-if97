@@ -18,8 +18,10 @@ import {
 } from '../dist/backward/tolerances.js';
 
 const qualities = [0, 1e-9, 0.01, 0.25, 0.5, 0.75, 0.99, 1 - 1e-9, 1];
-const pressures = new Set([Pt, 0.001, 0.01, 0.1, 1, 10, 20]);
-const temperatures = new Set([Tt, 274.15, 275, 276, 277.15, 277.5, 278, 300, 500, 600, 640]);
+const nearTriplePressure = Pt + 5e-10;
+const nearTripleTemperature = Tt + 1e-6;
+const pressures = new Set([Pt, nearTriplePressure, 0.001, 0.01, 0.1, 1, 10, 20]);
+const temperatures = new Set([Tt, nearTripleTemperature, 274.15, 275, 276, 277.15, 277.5, 278, 300, 500, 600, 640]);
 function adjacentFloat(value, direction) {
   const view = new DataView(new ArrayBuffer(8));
   view.setFloat64(0, value);
@@ -41,6 +43,8 @@ temperatures.add(623.15);
 for (const delta of [1, 0.1, 0.01, 0.002, 0.0015, 0.0011, 0.0010001, 0.001,
   0.0009999, 0.0005, 0.0001, 1e-5, 1e-6, 1e-7, 1e-8]) temperatures.add(Tc - delta);
 for (const delta of [1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8]) pressures.add(Pc - delta);
+pressures.add(Pc - Pc * REGION4_PRESSURE_TOLERANCE / 2);
+temperatures.add(Tc - REGION4_TEMPERATURE_TOLERANCE / 2);
 assert.equal(qualities.length, 9);
 assert(qualities.every((x, i) => x >= 0 && x <= 1 && (i === 0 || x > qualities[i - 1])));
 assert([...pressures].every((p) => p >= Pt && p < Pc));
@@ -48,8 +52,8 @@ assert([...temperatures].every((T) => T >= Tt && T < Tc));
 
 const report = {
   node: process.version, pressureSamples: pressures.size, temperatureSamples: temperatures.size,
-  qualities, states: 0, checks: 0, calls: {}, expectedCriticalRejections: 0, expectedInputSnaps: [],
-  verifiedAmbiguities: [], witnessedHSMultipleRoots: [], numericalConsistencyRejections: [],
+  qualities, states: 0, checks: 0, calls: {}, expectedCriticalRejections: 0,
+  verifiedAmbiguities: [], witnessedHSAlternatives: [], numericalConsistencyRejections: [],
   endpointMetadataChecks: 0,
   unexpectedFailureCount: 0, failures: [], failureGroups: {}, worst: {},
 };
@@ -208,6 +212,12 @@ function scan(kind, value) {
     if (!forward) continue;
     report.states++;
     stateValid(forward, context);
+    if ((kind === 'Px' && value === nearTriplePressure) ||
+        (kind === 'Tx' && value === nearTripleTemperature)) {
+      const field = kind === 'Px' ? 'pressure' : 'temperature';
+      report.checks++;
+      if (forward[field] !== value) fail('forward primary coordinate', context, { field, actual: forward[field], expected: value });
+    }
     close('forward quality', forward.quality, x, 1e-14, context);
     for (const field of ['enthalpy', 'entropy', 'internalEnergy', 'specificVolume']) {
       const expected = liquid[field] + x * (vapor[field] - liquid[field]);
@@ -226,14 +236,15 @@ function scan(kind, value) {
         const backward = solve(forward);
         if (criticalExcluded) fail('missing critical rejection', inverseContext, backward);
         else {
-          const seamAlternative = name === 'HS' && backward.region === Region.Region4 &&
+          const hsAlternative = name === 'HS' && backward.region === Region.Region4 &&
             forward.quality > 0 && forward.quality < 1 && backward.quality > 0 && backward.quality < 1 &&
-            (forward.temperature <= 623.15) !== (backward.temperature <= 623.15);
-          const reconstructed = seamAlternative ? solveTx(backward.temperature, backward.quality) : null;
+            ((forward.temperature <= 623.15) !== (backward.temperature <= 623.15) ||
+              (backward.temperature === Tt && forward.temperature !== Tt));
+          const reconstructed = hsAlternative ? solveTx(backward.temperature, backward.quality) : null;
           if (reconstructed && Math.abs(reconstructed.enthalpy - forward.enthalpy) <= 1e-9 &&
               Math.abs(reconstructed.entropy - forward.entropy) <= 1e-12) {
             stateValid(backward, inverseContext);
-            report.witnessedHSMultipleRoots.push({ ...inverseContext,
+            report.witnessedHSAlternatives.push({ ...inverseContext,
               source: { p: forward.pressure, T: forward.temperature, x: forward.quality,
                 h: forward.enthalpy, s: forward.entropy },
               alternative: { p: reconstructed.pressure, T: reconstructed.temperature, x: reconstructed.quality,
@@ -259,25 +270,16 @@ function scan(kind, value) {
 for (const T of [...temperatures].sort((a, b) => a - b)) {
   const p = saturationPressure(T);
   const recovered = saturationTemperature(p);
-  const tripleSnap = p === Pt && recovered === Tt
-    && T >= saturationTemperature(Pt - REGION4_PRESSURE_TOLERANCE)
-    && T <= saturationTemperature(Pt + REGION4_PRESSURE_TOLERANCE);
-  const criticalSnap = p === Pc && recovered === Tc
-    && T >= saturationTemperature(Pc - REGION4_PRESSURE_TOLERANCE) && T <= Tc;
-  if (T !== recovered && (tripleSnap || criticalSnap)) {
-    report.expectedInputSnaps.push({ T, p, recovered });
-  } else close('saturation T inverse', recovered, T, 1e-8, { T, p });
+  close('saturation T inverse', recovered, T, 1e-8, { T, p });
   scan('Tx', T);
 }
 for (const p of [...pressures].sort((a, b) => a - b)) {
   const T = saturationTemperature(p);
-  close('saturation p inverse', saturationPressure(T), p, 1e-8 * Math.max(1, p), { p, T });
+  close('saturation p inverse', saturationPressure(T), p, 1e-8 * p, { p, T });
   scan('Px', p);
 }
 for (const [name, fn] of [
   ['solvePx', () => solvePx(Pc, 0.5)], ['solveTx', () => solveTx(Tc, 0.5)],
-  ['solvePx normalized critical', () => solvePx(Pc - REGION4_PRESSURE_TOLERANCE / 2, 0.5)],
-  ['solveTx normalized critical', () => solveTx(Tc - REGION4_TEMPERATURE_TOLERANCE / 2, 0.5)],
 ]) {
   try { fn(); fail('missing critical rejection', { name }, 'returned a critical saturation state'); }
   catch (error) {
@@ -290,7 +292,7 @@ const output = process.argv[2] ?? join(tmpdir(), `iapws-saturation-${process.ver
 writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
 console.log(JSON.stringify({ node: report.node, states: report.states, checks: report.checks,
   calls: report.calls, verifiedAmbiguities: report.verifiedAmbiguities.length,
-  witnessedHSMultipleRoots: report.witnessedHSMultipleRoots.length,
+  witnessedHSAlternatives: report.witnessedHSAlternatives.length,
   numericalConsistencyRejections: report.numericalConsistencyRejections.length,
   expectedCriticalRejections: report.expectedCriticalRejections,
   endpointMetadataChecks: report.endpointMetadataChecks,

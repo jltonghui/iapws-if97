@@ -84,12 +84,13 @@ describe('solveTH backward equations', () => {
     expectBackwardValue(backward.pressure, forward.pressure, 'pressure');
   });
 
-  it('preserves the exact target enthalpy for a fixed-temperature Region 2 solve', () => {
+  it('returns native enthalpy for a fixed-temperature Region 2 solve', () => {
     const backward = solveTH(473.15, 2855);
 
     expect(backward.region).toBe(Region.Region2);
     expect(backward.temperature).toBe(473.15);
-    expect(backward.enthalpy).toBe(2855);
+    expect(backward.enthalpy).toBe(region2(backward.pressure, backward.temperature).enthalpy);
+    expect(Math.abs(backward.enthalpy - 2855)).toBeLessThan(1e-9);
   });
 
   it('preserves a low-pressure Region 4 state', () => {

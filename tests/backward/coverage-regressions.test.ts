@@ -3,7 +3,6 @@ import { solvePT } from '../../src/core/solver.js';
 import { solvePH } from '../../src/backward/ph.js';
 import { solvePS } from '../../src/backward/ps.js';
 import { solveHS } from '../../src/backward/hs.js';
-import { saturationEndpointsAtPressure } from '../../src/saturation/common.js';
 import { Pc, R3_H_CRT, R3_S_CRT } from '../../src/constants.js';
 import { IF97Error, Region } from '../../src/types.js';
 import { expectBackwardValue } from '../helpers/backward-assertions.js';
@@ -79,20 +78,14 @@ describe('backward solver validity guards', () => {
     expect(() => solvePS(Pc, R3_S_CRT)).toThrow(/critical/i);
   });
 
-  it('solvePH rejects near-critical pressure inputs that snap to the critical saturation endpoint', () => {
-    const endpoints = saturationEndpointsAtPressure(Pc - 1e-10);
-    const h = (endpoints.liquid.enthalpy + endpoints.vapor.enthalpy) / 2;
-
-    expect(() => solvePH(Pc - 1e-10, h)).toThrow(IF97Error);
-    expect(() => solvePH(Pc - 1e-10, h)).toThrow(/critical/i);
+  it('solvePH rejects a near-critical saturation state without stable EOS endpoints', () => {
+    expect(() => solvePH(Pc - 1e-10, R3_H_CRT)).toThrow(IF97Error);
+    expect(() => solvePH(Pc - 1e-10, R3_H_CRT)).toThrow(/numerical inconsistency/);
   });
 
-  it('solvePS rejects near-critical pressure inputs that snap to the critical saturation endpoint', () => {
-    const endpoints = saturationEndpointsAtPressure(Pc - 1e-10);
-    const s = (endpoints.liquid.entropy + endpoints.vapor.entropy) / 2;
-
-    expect(() => solvePS(Pc - 1e-10, s)).toThrow(IF97Error);
-    expect(() => solvePS(Pc - 1e-10, s)).toThrow(/critical/i);
+  it('solvePS rejects a near-critical saturation state without stable EOS endpoints', () => {
+    expect(() => solvePS(Pc - 1e-10, R3_S_CRT)).toThrow(IF97Error);
+    expect(() => solvePS(Pc - 1e-10, R3_S_CRT)).toThrow(/numerical inconsistency/);
   });
 
   it('solveHS rejects the critical point instead of returning a Region 3 state', () => {

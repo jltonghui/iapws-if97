@@ -23,7 +23,7 @@ export const Tc = 647.096;
 /** Temperature exclusion half-band around the critical point [K] */
 export const CRITICAL_T_EXCLUSION_BAND = 1e-3;
 
-/** Region 4 endpoint snap tolerance for temperatures [K] */
+/** Region 4 tolerance for outward temperature-boundary roundoff [K] */
 export const REGION4_TEMPERATURE_TOLERANCE = 1e-9;
 
 /** Safety margin used when clamping Region 4 temperatures below Tc [K] */
@@ -32,7 +32,7 @@ export const REGION4_SUBCRITICAL_TEMPERATURE_MARGIN = 1e-8;
 /** Critical pressure [MPa] */
 export const Pc = 22.064;
 
-/** Region 4 endpoint snap tolerance for pressures [MPa] */
+/** Relative tolerance for outward Region 4 pressure-boundary roundoff */
 export const REGION4_PRESSURE_TOLERANCE = 1e-9;
 
 /** Tolerance for identifying the critical h-s endpoint in Region 4 */

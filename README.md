@@ -52,6 +52,8 @@ console.log(c.quality);     // 0.5
 
 All numeric inputs must be finite numbers.
 
+Results retain computed floating-point precision without decimal snapping. Backward solvers keep computed properties instead of overwriting them with input pressure, enthalpy, or entropy; compare recovered values with numerical tolerances. Region 3 PT inversion preserves input pressure after checking EOS convergence.
+
 `solveTH(T, h)` and `solveTS(T, s)` require a unique solution in the supported IF97 range. Some pairs describe both compressed liquid and wet steam, or two compressed-liquid pressures on a non-monotonic isotherm. TS pairs can be ambiguous in low-temperature water, where the thermal expansion coefficient changes sign. Both solvers throw `AmbiguousStateError` for ambiguous pairs. If you know the pressure or vapor quality, use `solvePT(p, T)` or `solveTx(T, x)`.
 
 At branch endpoints and isotherm extrema, `solveTH` uses an absolute enthalpy tolerance of `1e-9 kJ/kg`, and `solveTS` uses an absolute entropy tolerance of `1e-12 kJ/(kg·K)`. Inputs within the respective tolerance match the endpoint or extremum. Pressure recovery near an extremum is ill-conditioned.
@@ -109,7 +111,7 @@ const density = 1 / state.specificVolume;
 console.log(state.enthalpy, density);
 ```
 
-It shares `solve()`'s thermodynamic solvers, validation, ambiguity checks, and public numeric normalization. `BasicProperties` has no `density` or transport fields. Full-state solvers compute applicable transport properties.
+It uses `solve()`'s thermodynamic solvers, validation, and ambiguity checks. `BasicProperties` omits `density` and transport fields; full-state solvers compute applicable transport properties.
 
 ## Solver return value
 
@@ -150,7 +152,7 @@ type SteamState = {
 - Region 4 results include [`saturation`](#saturation-endpoints); single-phase results omit it.
 - `solvePT(p, T)` is a single-phase solver. It selects the liquid side of a subcritical isotherm when `p >= saturationPressure(T)`; use `solvePx` or `solveTx` to specify vapor quality.
 - `surfaceTension` is only available for Region 4 saturation states below the critical point; otherwise `null`.
-- `density` equals `1 / specificVolume` using the returned, normalized volume.
+- `density` equals `1 / specificVolume` using the returned volume.
 - `ionizationConstant` is `null` outside the IAPWS validity range for that correlation.
 
 ## Units
@@ -195,7 +197,7 @@ import { detectRegionPT } from 'iapws-if97/detect';
 These are low-level mathematical interfaces:
 
 - Region functions return core thermodynamic properties without `density` or transport-property enrichment.
-- Region, boundary, and detection helpers expect callers to respect the corresponding equation domains. Detection helpers return a `Region` value or `-1` when no valid region is found. `detectRegionTH(T, h)` and `detectRegionTS(T, s)` throw `AmbiguousStateError` when multiple states match, even within the same region.
+- Region, boundary, and detection helpers require callers to respect equation domains. All six detection helpers return a `Region`, or `-1` for no match or non-finite inputs. `detectRegionTH(T, h)` and `detectRegionTS(T, s)` throw `AmbiguousStateError` for multiple matches, even within one region.
 - `thermalConductivity(T, rho)` calculates the base contribution. Pass `cp`, `cv`, `drhodP_T`, and `mu` to include the IAPWS 2011 critical-enhancement term.
 - `surfaceTension(T)` is a saturation-line property. `saturationPressure(T)` and `saturationTemperature(p)` expose the mathematical Region 4 boundary and are more permissive at endpoints than `solveTx` and `solvePx`.
 
@@ -246,6 +248,8 @@ Near the critical point, the independently fitted Region 3 and Region 4 equation
 
 Near 623.15 K, the independent Region 1/2 and Region 3 fits can yield two saturation states with the same enthalpy and entropy. `solveHS` returns one state that satisfies its equation of state (EOS) and both input constraints within the solver's tolerances. Its temperature and quality can differ from another valid solution.
 
+Near the triple-point liquid endpoint, HS inversion is ill-conditioned. `solveHS` can recover different temperature and quality values while meeting both input constraints within tolerance.
+
 Single-phase Region 3 inversion also throws `IF97Error` if it cannot construct a stable EOS state on the requested side of the saturation curve.
 
 ## Errors and limits
@@ -254,12 +258,14 @@ The library throws typed errors:
 
 | Error | Meaning |
 | --- | --- |
-| `OutOfRangeError` | Input is outside the selected solver's supported range |
+| `OutOfRangeError` | Input is outside a known supported range; `min` and `max` can depend on the other input |
 | `ConvergenceError` | An internal iterative solve failed to converge |
 | `AmbiguousStateError` | Multiple physical states match the supplied temperature and either enthalpy or entropy |
-| `IF97Error` | Base class; root solvers also use it directly for non-numeric or non-finite inputs, conflicting aliases, unsupported modes, and unsupported critical-point states |
+| `IF97Error` | Base class; covers numerical state-construction failures and invalid or unsupported inputs without a more specific public error |
 
-`AmbiguousStateError` extends `IF97Error`. Both `solveTH` and `solveTS`, including the unified `TH` and `TS` modes, reject ambiguous inputs. Calls that previously selected one branch can now throw this error. Use `solvePT(p, T)` if you know the pressure, or `solveTx(T, x)` if you know the vapor quality.
+Internal subclasses are catchable as `IF97Error`; `constructor.name` is not a public contract. Numerical failure alone does not establish an out-of-range input.
+
+`AmbiguousStateError` extends `IF97Error`. Direct and unified `TH`/`TS` solvers reject ambiguous inputs.
 
 Numeric inputs to root solvers and transport helpers must be finite. Low-level region, boundary, and detection helpers rely on callers to respect their equation domains. `solvePT(Pc, Tc)`, exact critical Region 4 states, and `solveTH`/`solveTS` inputs within `0.001 K` of `Tc` are rejected because the required derivative properties or inverse solution are singular or ill-conditioned.
 
@@ -277,6 +283,7 @@ Transport-property limits are separate; see [Transport correlation limits](#tran
 The test suite covers:
 
 - Official IF97 verification tables (Regions 1–5)
+- Official IAPWS backward and supplementary-boundary check values (relative error `≤ 1e-8`), including all 26 Region 3 `v(p,T)` subregions
 - Backward-equation round-trip accuracy
 - Temperature-led backward round trips (`TH` and `TS`)
 - High-pressure Region 4 regressions

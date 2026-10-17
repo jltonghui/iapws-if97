@@ -7,6 +7,7 @@ import {
 } from '../../src/core/formulation-seams.js';
 import { B23_P_MIN, P_MIN } from '../../src/constants.js';
 import { Region } from '../../src/types.js';
+import { boundary23_T_to_P } from '../../src/regions/boundaries.js';
 import { region2 } from '../../src/regions/region2.js';
 import { saturationPressure } from '../../src/regions/region4.js';
 
@@ -35,6 +36,22 @@ describe('formulation seam geometry', () => {
     expect(formulationSeamAtTemperature(863.15)).toBeNull();
     expect(formulationSeamAtPressure(50.000001, '25')).toBeNull();
     expect(formulationSeamAtPressure(P_MIN, '25')).not.toBeNull();
+  });
+
+  it.each([
+    B23_P_MIN,
+    (B23_P_MIN + saturationPressure(623.15)) / 2,
+    16.52916425260358,
+    saturationPressure(623.15),
+    boundary23_T_to_P(623.15),
+  ])('rejects the B23 corner outside the Region 3 domain at p=%s MPa', (p) => {
+    expect(formulationSeamAtPressure(p, '23')).toBeNull();
+  });
+
+  it.each([16.5292, 100])('retains B23 pressure seams above the corner at p=%s MPa', (p) => {
+    const pair = formulationSeamAtPressure(p, '23')!;
+    expect(pair.temperature).toBeGreaterThan(623.15);
+    expect(pair.canonical.region).toBe(Region.Region3);
   });
 
   it('retains the exact Region 2 corner above the final native B23 float', () => {

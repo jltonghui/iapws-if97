@@ -76,7 +76,7 @@ describe('TS uniqueness', () => {
     expect(forward.region).toBe(Region.Region2);
     expect(recovered.region).toBe(forward.region);
     expect(recovered.pressure).toBeLessThan(saturationPressure(T));
-    expect(recovered.entropy).toBe(forward.entropy);
+    expectBackwardValue(recovered.entropy, forward.entropy, 'entropy', 1e-12);
     expectBackwardValue(solvePT(recovered.pressure, T).entropy, forward.entropy, 'entropy');
   });
 
@@ -91,14 +91,14 @@ describe('TS uniqueness', () => {
     expect(forward.region).toBe(Region.Region2);
     expect(recovered.region).toBe(forward.region);
     expect(recovered.pressure).toBeLessThan(boundary);
-    expect(recovered.entropy).toBe(forward.entropy);
+    expectBackwardValue(recovered.entropy, forward.entropy, 'entropy', 1e-12);
   });
 
   it.each([650, 700])('prefers the owned root only in a B23 overlap at T=%s K', (T) => {
     const s = region2(boundary23_T_to_P(T), T).entropy + 5e-13;
     const recovered = solveTS(T, s);
     expect(recovered.region).toBe(T === 650 ? Region.Region3 : Region.Region2);
-    expect(recovered.entropy).toBe(s);
+    expectBackwardValue(recovered.entropy, s, 'entropy', 1e-12);
     expectBackwardValue(solvePT(recovered.pressure, T).entropy, s, 'entropy');
   });
 
@@ -111,7 +111,7 @@ describe('TS uniqueness', () => {
     const recovered = solveTS(maximum.temperature, maximum.entropy);
     expect(recovered.region).toBe(Region.Region1);
     expectBackwardValue(recovered.pressure, maximum.pressure, 'pressure', 1e-5);
-    expect(recovered.entropy).toBe(maximum.entropy);
+    expectBackwardValue(recovered.entropy, maximum.entropy, 'entropy', 1e-12);
     expect(detectRegionTS(maximum.temperature, maximum.entropy)).toBe(Region.Region1);
   });
 
@@ -163,7 +163,7 @@ describe('TS uniqueness', () => {
     const recovered = solveTS(T, forward.entropy);
     expect(recovered.region).toBe(Region.Region1);
     expectBackwardValue(recovered.pressure, forward.pressure, 'pressure', 1e-6);
-    expect(recovered.entropy).toBe(forward.entropy);
+    expectBackwardValue(recovered.entropy, forward.entropy, 'entropy', 1e-12);
     expect(Math.abs(solvePT(recovered.pressure, T).entropy - forward.entropy)).toBeLessThan(1e-12);
     expect(detectRegionTS(T, forward.entropy)).toBe(Region.Region1);
   });
@@ -189,7 +189,7 @@ describe('TS uniqueness', () => {
     const recovered = solveTS(T, forward.entropy);
     expect(recovered.region).toBe(region);
     expectBackwardValue(recovered.pressure, p, 'pressure');
-    expect(recovered.entropy).toBe(forward.entropy);
+    expectBackwardValue(recovered.entropy, forward.entropy, 'entropy', 1e-12);
     expectBackwardValue(solvePT(recovered.pressure, T).entropy, forward.entropy, 'entropy');
     expect(detectRegionTS(T, forward.entropy)).toBe(region);
   });
@@ -210,7 +210,7 @@ describe('TS uniqueness', () => {
     expect(recovered.quality).toBe(0);
     expectBackwardValue(recovered.pressure, forward.pressure, 'pressure');
     expect(recovered.temperature).toBe(T);
-    expect(recovered.entropy).toBe(forward.entropy);
+    expectBackwardValue(recovered.entropy, forward.entropy, 'entropy', 1e-12);
     expectBackwardValue(solvePT(recovered.pressure, T).entropy, forward.entropy, 'entropy');
   });
 
@@ -224,7 +224,7 @@ describe('TS uniqueness', () => {
     expect(recovered.region).toBe(Region.Region3);
     expect(recovered.density).toBeGreaterThan(322);
     expectBackwardValue(recovered.pressure, forward.pressure, 'pressure');
-    expect(recovered.entropy).toBe(forward.entropy);
+    expectBackwardValue(recovered.entropy, forward.entropy, 'entropy', 1e-12);
     expectBackwardValue(solvePT(recovered.pressure, T).entropy, forward.entropy, 'entropy');
   });
 });

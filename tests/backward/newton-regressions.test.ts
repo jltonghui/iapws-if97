@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Pc, Tc } from '../../src/constants.js';
+import { P_MIN, Pc, Tc } from '../../src/constants.js';
 import { solveHS, solvePH, solvePS, solvePT, type SteamState } from '../../src/index.js';
 import { saturationTemperature } from '../../src/regions/region4.js';
 import { Region } from '../../src/types.js';
@@ -26,6 +26,9 @@ describe('analytic backward Newton regressions', () => {
     { name: 'Region 3 liquid side of saturation', p: 20, T: saturationTemperature(20) - 1e-4 },
     { name: 'Region 3 vapor side of saturation', p: 20, T: saturationTemperature(20) + 1e-4 },
     { name: 'Region 3 near the critical point', p: Pc + 1e-6, T: Tc },
+    { name: 'Region 3 below the critical pressure', p: Pc - 1e-6, T: Tc },
+    { name: 'Region 3 critical isobar below Tc', p: Pc, T: Tc - 0.001 },
+    { name: 'Region 3 critical isobar above Tc', p: Pc, T: Tc + 0.001 },
     { name: 'Region 3 just above the Region 1 boundary', p: 20, T: 623.15 + 1e-7 },
     { name: 'Region 3 exact pressure ceiling', p: 100, T: 700 },
   ])('$name round-trips through PH and PS', ({ p, T }) => {
@@ -71,6 +74,21 @@ describe('analytic backward Newton regressions', () => {
     expectRelative(backward.pressure, forward.pressure);
     expectRelative(backward.temperature, forward.temperature);
   });
+
+  it.each([1125.3239131391306, 1281.8456522565218, 2168.8021739217393])(
+    'recovers a Region 5 HS state at the minimum pressure and T=%s K', (T) => {
+      const forward = solvePT(P_MIN, T);
+      const backward = solveHS(forward.enthalpy, forward.entropy);
+      const reconstructed = solvePT(backward.pressure, backward.temperature);
+
+      expect(backward.region).toBe(Region.Region5);
+      expect(backward.pressure).toBeGreaterThanOrEqual(P_MIN);
+      expectRelative(backward.pressure, P_MIN, 1e-9);
+      expectRelative(backward.temperature, T, 1e-10);
+      expect(Math.abs(backward.enthalpy - reconstructed.enthalpy)).toBeLessThan(1e-9);
+      expect(Math.abs(backward.entropy - reconstructed.entropy)).toBeLessThan(1e-12);
+    },
+  );
 
   it.each([4, 10, 20])('prefers a real Region 2 HS root in the formulation overlap at p=%s MPa', (p) => {
     const forward = solvePT(p, 1073.151);

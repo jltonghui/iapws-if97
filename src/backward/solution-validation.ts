@@ -1,8 +1,7 @@
 import * as C from '../constants.js';
-import { detectRegionPT, nativeSaturationTemperatureBracket } from '../core/region-detector.js';
+import { detectRegionPT, nativeB23TemperatureBracket, nativeSaturationTemperatureBracket } from '../core/region-detector.js';
 import { solveRegion3PTBasic } from '../core/region3-pt.js';
 import type { FormulationSeamResolution } from '../core/formulation-seams.js';
-import { boundary23_T_to_P } from '../regions/boundaries.js';
 import { region2 } from '../regions/region2.js';
 import { region1 } from '../regions/region1.js';
 import { saturationPressure } from '../regions/region4.js';
@@ -58,7 +57,10 @@ function snapDownFromAbove(value: number, boundary: number): number {
 }
 
 function normalizeComputedPT(state: BasicProperties): BasicProperties {
-  let pressure = snapUpFromBelow(state.pressure, C.P_MIN);
+  let pressure = state.pressure < C.P_MIN &&
+      C.P_MIN - state.pressure <= backwardConstraintTolerance('pressure', C.P_MIN)
+    ? C.P_MIN
+    : state.pressure;
   pressure = snapDownFromAbove(
     pressure,
     state.region === Region.Region5 ? C.R5_P_MAX : C.P_MAX,
@@ -85,16 +87,7 @@ function normalizeB23State(state: BasicProperties): BasicProperties {
     return state;
   }
 
-  // Invert the native pressure boundary, retaining its closed Region 3 side.
-  // The published inverse correlation can differ by several temperature ULPs.
-  let lower = C.R2_T_MIN;
-  let upper = C.B23_T_MAX;
-  while (true) {
-    const middle = (lower + upper) / 2;
-    if (middle === lower || middle === upper) break;
-    if (boundary23_T_to_P(middle) <= state.pressure) lower = middle;
-    else upper = middle;
-  }
+  const [lower, upper] = nativeB23TemperatureBracket(state.pressure);
   const temperature = state.region === Region.Region3 ? lower : upper;
   if (Math.abs(temperature - state.temperature) > boundaryTolerance(temperature, state.temperature)) {
     return state;
@@ -140,6 +133,14 @@ function validateBasicEnvelope(state: BasicProperties, solverName: string): void
   if (state.pressure < C.P_MIN || state.pressure > C.P_MAX ||
       state.temperature < C.T_MIN || state.temperature > C.T_MAX) {
     throw new IF97Error(`${solverName} produced a state outside the IF97 PT envelope`);
+  }
+
+  if (state.region === Region.Region3 &&
+      ![state.cp, state.cv, state.isothermalCompressibility, state.speedOfSound]
+        .every((value) => value !== null && Number.isFinite(value) && value > 0)) {
+    throw new IF97Error(
+      `${solverName}: Region 3 numerical inconsistency at p=${state.pressure} MPa, T=${state.temperature} K: cannot construct a stable EOS state`,
+    );
   }
 }
 
@@ -187,32 +188,6 @@ function validateConstraints(
   }
 }
 
-function withExactConstraints(
-  state: BasicProperties,
-  constraints: readonly BackwardConstraint[],
-): BasicProperties {
-  const normalized = { ...state };
-
-  for (const constraint of constraints) {
-    switch (constraint.label) {
-      case 'pressure':
-        normalized.pressure = Object.is(constraint.expected, -0) ? 0 : constraint.expected;
-        break;
-      case 'temperature':
-        normalized.temperature = Object.is(constraint.expected, -0) ? 0 : constraint.expected;
-        break;
-      case 'enthalpy':
-        normalized.enthalpy = Object.is(constraint.expected, -0) ? 0 : constraint.expected;
-        break;
-      case 'entropy':
-        normalized.entropy = Object.is(constraint.expected, -0) ? 0 : constraint.expected;
-        break;
-    }
-  }
-
-  return normalized;
-}
-
 export function validateBackwardState(
   state: BasicProperties,
   constraints: readonly BackwardConstraint[],
@@ -228,19 +203,14 @@ export function validateBackwardState(
       : constraint)
     : constraints;
   validateConstraints(state, checkedConstraints, options.solverName);
-  const exactPT = withExactConstraints(
-    state,
-    constraints.filter(({ label }) => label === 'pressure' || label === 'temperature'),
-  );
-  const computed = normalizeComputedPT(exactPT);
+  const computed = normalizeComputedPT(state);
   const normalized = constraints.some(({ label }) => label === 'temperature')
     ? computed
     : normalizeSaturationState(normalizeB23State(normalizeRegion3LowerState(computed)));
   validateBasicEnvelope(normalized, options.solverName);
   validateRegionConsistency(normalized, options.solverName, options.expectedRegion);
   validateConstraints(normalized, checkedConstraints, options.solverName);
-  return withExactConstraints(normalized, seam === undefined ? constraints :
-    constraints.filter(({ label }) => label === 'pressure' || label === 'temperature'));
+  return normalized;
 }
 
 export function validateRegion3PTReconstruction(state: BasicProperties, solverName: string): BasicProperties {

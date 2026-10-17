@@ -79,13 +79,14 @@ describe('solveTS backward equations', () => {
     expectBackwardValue(backward.pressure, forward.pressure, 'pressure');
   });
 
-  it('preserves the exact target entropy for a fixed-temperature Region 2 solve', () => {
+  it('returns native entropy for a fixed-temperature Region 2 solve', () => {
     const forward = region2(0.0035, 700);
     const backward = solveTS(forward.temperature, forward.entropy);
 
     expect(backward.region).toBe(Region.Region2);
     expect(backward.temperature).toBe(forward.temperature);
-    expect(backward.entropy).toBe(forward.entropy);
+    expect(backward.entropy).toBe(region2(backward.pressure, backward.temperature).entropy);
+    expect(Math.abs(backward.entropy - forward.entropy)).toBeLessThan(1e-12);
   });
 
   it('preserves a low-pressure Region 4 state', () => {

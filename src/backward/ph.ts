@@ -17,7 +17,7 @@ import { region3ByRhoT } from '../regions/region3.js';
 import { region5 } from '../regions/region5.js';
 import { saturationTemperature } from '../regions/region4.js';
 import { assertFiniteNumber } from '../core/input-validation.js';
-import { detectRegionPH, pressurePropertySeam } from './pressure-property-region.js';
+import { assertPressurePropertyEnvelope, detectRegionPH, pressurePropertySeam } from './pressure-property-region.js';
 import { newtonRaphson } from '../solvers/newton-raphson.js';
 import { bracketedNewton } from '../solvers/bracketed-newton.js';
 import { dampedNewton2D } from '../solvers/damped-newton-2d.js';
@@ -144,7 +144,7 @@ export function r2BackwardT(p: number, h: number): number {
 // ─── Region 3 Backward T(P,H) and v(P,H) ──────────────────────────────────
 
 /** B3ab boundary: P → H */
-function b3ab_P_to_H(p: number): number {
+export function b3ab_P_to_H(p: number): number {
   return 2014.64004206875 + 3.74696550136983 * p - 0.0219921901054187 * p * p + 0.000087513168600995 * p * p * p;
 }
 
@@ -255,6 +255,7 @@ export function solvePH(p: number, h: number): BasicProperties {
     throw new OutOfRangeError('Enthalpy', h, C.H_MIN, C.H_MAX);
   }
   assertCriticalRegion4PHInput(p, h, 'solvePH');
+  assertPressurePropertyEnvelope(p, h, 'enthalpy');
 
   const seam = pressurePropertySeam(p, h, 'enthalpy');
   if (seam !== null && seam.kind !== 'overlap') {

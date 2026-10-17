@@ -1,5 +1,4 @@
 import * as C from '../constants.js';
-import { normalizePublicState } from '../core/public-normalization.js';
 import { solveRegion3PTBasic } from '../core/region3-pt.js';
 import { formulationSeamAtTemperature, matchFixedSeam } from '../core/formulation-seams.js';
 import { boundary23_T_to_P } from '../regions/boundaries.js';
@@ -12,12 +11,12 @@ import {
   saturationEndpointsAtTemperature,
 } from '../saturation/common.js';
 import type { BasicProperties } from '../types.js';
-import { AmbiguousStateError } from '../types.js';
+import { AmbiguousStateError, OutOfRangeError } from '../types.js';
 import { createFixedTemperatureStationaryPressureFinder } from './fixed-temperature-stationary.js';
 import { solveFixedTemperaturePressure, type FixedTemperatureProperty } from './fixed-temperature-solver.js';
 import { validateBackwardState } from './solution-validation.js';
 
-/** Return the only physical TH/TS state, or null if none exists. */
+/** Return the only physical TH/TS state, or null if unresolved; proven envelope violations throw. */
 export function uniqueFixedTemperatureState(
   T: number,
   target: number,
@@ -30,6 +29,9 @@ export function uniqueFixedTemperatureState(
   const solverName = property === 'enthalpy' ? 'solveTH' : 'solveTS';
   const rootTolerance = property === 'enthalpy' ? 1e-9 : 1e-12;
   const candidates: BasicProperties[] = [];
+  let propertyMin = Infinity;
+  let propertyMax = -Infinity;
+  let finiteEnvelope = true;
   const seamPair = formulationSeamAtTemperature(T);
   const seam = seamPair === null ? null : matchFixedSeam(seamPair, property, target, 'temperature');
   const incidentCandidates = new Set<BasicProperties>();
@@ -78,6 +80,12 @@ export function uniqueFixedTemperatureState(
 
     for (let i = 0; i < points.length; i++) {
       const current = points[i];
+      if (Number.isFinite(current[property])) {
+        propertyMin = Math.min(propertyMin, current[property]);
+        propertyMax = Math.max(propertyMax, current[property]);
+      } else {
+        finiteEnvelope = false;
+      }
       const residual = current[property] - target;
       const currentIncluded = (i > 0 || includeLower) && (i < points.length - 1 || includeUpper);
       const currentMatches = Math.abs(residual) <= rootTolerance &&
@@ -123,7 +131,7 @@ export function uniqueFixedTemperatureState(
     const p23 = Math.min(C.P_MAX, boundary23_T_to_P(T));
     addInterval(region2, region2(C.P_MIN, T), region2(p23, T), true, false);
     addInterval(solveRegion3PTBasic,
-      { ...solveRegion3PTBasic(p23, T), pressure: p23 },
+      solveRegion3PTBasic(p23, T),
       solveRegion3PTBasic(C.P_MAX, T));
   } else {
     const endpoints = saturationEndpointsAtTemperature(T);
@@ -144,7 +152,7 @@ export function uniqueFixedTemperatureState(
       addInterval(region2, region2(C.P_MIN, T), region2(p23, T), true, false);
       // Keep the vapor and liquid Region 3 branches separate at saturation.
       addInterval(solveRegion3PTBasic,
-        { ...solveRegion3PTBasic(p23, T), pressure: p23 }, endpoints.vapor);
+        solveRegion3PTBasic(p23, T), endpoints.vapor);
       addInterval(solveRegion3PTBasic, endpoints.liquid, solveRegion3PTBasic(C.P_MAX, T));
     }
   }
@@ -168,6 +176,15 @@ export function uniqueFixedTemperatureState(
     }
   }
 
+  // Only the hull exterior proves a range error; an interior gap can be numerical.
+  if (candidates.length === 0 && finiteEnvelope &&
+      Number.isFinite(propertyMin) && Number.isFinite(propertyMax) &&
+      (target < propertyMin - rootTolerance || target > propertyMax + rootTolerance)) {
+    throw new OutOfRangeError(
+      `${property === 'enthalpy' ? 'Enthalpy' : 'Entropy'} at T=${T} K`, target, propertyMin, propertyMax,
+    );
+  }
+
   const validate = (state: BasicProperties): BasicProperties => validateBackwardState(state, [
     { label: 'temperature', expected: T },
     { label: property, expected: target },
@@ -177,7 +194,7 @@ export function uniqueFixedTemperatureState(
     ...(seam !== null && state === seam.state ? { seam } : {}),
   });
   if (candidates.length > 1) {
-    const validated = candidates.map((state) => normalizePublicState(validate(state)));
+    const validated = candidates.map(validate);
     validated.sort((first, second) => first.pressure - second.pressure);
     throw new AmbiguousStateError(T, target, property, validated);
   }

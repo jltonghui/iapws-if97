@@ -34,12 +34,12 @@ const R1_PHS: CoefficientTable = [
   [0,4,65.9639569909906],[0,5,-16.2060388912024],[0,6,450.620017338667],
   [0,8,854.68067822417],[0,14,6075.23214001161],[1,0,32.6487682621856],
   [1,1,-26.9408844582931],[1,4,-319.9478483343],[1,6,-928.35430704332],
-  [2,0,30.3634537455249],[2,1,-65.0540422444146],[2,10,-4309.1316516130],
+  [2,0,30.3634537455249],[2,1,-65.0540422444146],[2,10,-4309.91316516130],
   [3,4,-747.512324096068],[4,1,730.000345529245],[4,4,1142.84032569021],
   [5,0,-436.407041874559],
 ] as const;
 
-function r1Phs(h: number, s: number): number {
+export function r1Phs(h: number, s: number): number {
   const mu = h / 3400;
   const sig = s / 7.6;
   return 100 * evalPoly(R1_PHS, -0.05, -0.05, mu, sig);
@@ -48,7 +48,7 @@ function r1Phs(h: number, s: number): number {
 // ─── Region 2 P(h,s) — Subregions 2a, 2b, 2c ──────────────────────────────
 
 /** Boundary between Region 2a and Region 2b in h-s plane. */
-function b2abBoundary(s: number): number {
+export function b2abBoundary(s: number): number {
   return -3498.98083432139 + 2575.60716905876 * s - 421.073558227969 * s * s + 27.6349063799944 * s * s * s;
 }
 
@@ -65,7 +65,7 @@ const R2A_PHS: CoefficientTable = [
   [6,3,-5.5891922446576],[7,1,0.0400645798472063],
 ] as const;
 
-function r2aPhs(h: number, s: number): number {
+export function r2aPhs(h: number, s: number): number {
   const mu = h / 4200;
   const sig = s / 12;
   const P = evalPoly(R2A_PHS, 0.5, 1.2, mu, sig);
@@ -86,7 +86,7 @@ const R2B_PHS: CoefficientTable = [
   [8,18,-24796465425889.3],[12,10,1888019068.65134],[14,16,-123651009018773],
 ] as const;
 
-function r2bPhs(h: number, s: number): number {
+export function r2bPhs(h: number, s: number): number {
   const mu = h / 4100;
   const sig = s / 7.9;
   const P = evalPoly(R2B_PHS, 0.6, 1.01, mu, sig);
@@ -107,7 +107,7 @@ const R2C_PHS: CoefficientTable = [
   [16,10,-1.11754907323424e15],
 ] as const;
 
-function r2cPhs(h: number, s: number): number {
+export function r2cPhs(h: number, s: number): number {
   const mu = h / 3500;
   const sig = s / 5.9;
   const P = evalPoly(R2C_PHS, 0.7, 1.1, mu, sig);
@@ -139,7 +139,7 @@ const R3A_PHS: CoefficientTable = [
   [28,36,7.30872705175151e43],[32,10,1.5914584739887e24],[32,28,3.77121605943324e40],
 ] as const;
 
-function r3aPhs(h: number, s: number): number {
+export function r3aPhs(h: number, s: number): number {
   const mu = h / 2300;
   const sig = s / 4.4;
   return 99 * evalPoly(R3A_PHS, 1.01, 0.75, mu, sig);
@@ -155,12 +155,12 @@ const R3B_PHS: CoefficientTable = [
   [-4,8,3550.73647696481],[-3,1,-1.15303107290162e-4],[-3,3,-1.75092403171802],
   [-3,5,257.98168774816],[-3,6,-727.048374179467],[-2,0,1.21644822609198e-4],
   [-2,1,0.0393137871762692],[-1,0,7.04181005909296e-3],[0,3,-82.910820069811],
-  [2,0,-0.26517881813125],[2,1,13.7531682453991],[5,0,-52.3940907530460],
+  [2,0,-0.26517881813125],[2,1,13.7531682453991],[5,0,-52.2394090753046],
   [6,1,2405.56298941048],[8,1,-22736.1631268929],[10,1,89074.6343932567],
   [14,3,-23923456.5822486],[14,7,5687958081.29714],
 ] as const;
 
-function r3bPhs(h: number, s: number): number {
+export function r3bPhs(h: number, s: number): number {
   const mu = h / 2800;
   const sig = s / 5.3;
   return 16.6 / evalPoly(R3B_PHS, 0.681, 0.792, mu, sig);
@@ -193,6 +193,8 @@ function solveGibbsHS(
       ],
     };
   }, initial, {
+    // Entropy convergence must also resolve pressure at the P_MIN boundary.
+    tolerance: 1e-12,
     isValid: ([candidateP, candidateT]) => candidateP > 0 && candidateT > 0,
   });
   return stateAt(p, T);

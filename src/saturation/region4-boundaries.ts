@@ -2,16 +2,14 @@ import * as C from '../constants.js';
 import { IF97Error, OutOfRangeError } from '../types.js';
 
 export function normalizeRegion4Pressure(p: number): number {
-  if (Math.abs(p - C.P_MIN) <= C.REGION4_PRESSURE_TOLERANCE) return C.P_MIN;
-  if (Math.abs(p - C.Pt) <= C.REGION4_PRESSURE_TOLERANCE) return C.Pt;
-  if (Math.abs(p - C.Pc) <= C.REGION4_PRESSURE_TOLERANCE) return C.Pc;
+  if (p < C.P_MIN && C.P_MIN - p <= C.REGION4_PRESSURE_TOLERANCE * C.P_MIN) return C.P_MIN;
+  if (p > C.Pc && p - C.Pc <= C.REGION4_PRESSURE_TOLERANCE * C.Pc) return C.Pc;
   return p;
 }
 
 export function normalizeRegion4Temperature(T: number): number {
-  if (Math.abs(T - C.T_MIN) <= C.REGION4_TEMPERATURE_TOLERANCE) return C.T_MIN;
-  if (Math.abs(T - C.Tt) <= C.REGION4_TEMPERATURE_TOLERANCE) return C.Tt;
-  if (Math.abs(T - C.Tc) <= C.REGION4_TEMPERATURE_TOLERANCE) return C.Tc;
+  if (T < C.T_MIN && C.T_MIN - T <= C.REGION4_TEMPERATURE_TOLERANCE) return C.T_MIN;
+  if (T > C.Tc && T - C.Tc <= C.REGION4_TEMPERATURE_TOLERANCE) return C.Tc;
   return T;
 }
 
@@ -32,7 +30,7 @@ function criticalPointMessage(solverName: string): string {
 }
 
 export function assertRegion4PressureStateInput(p: number, solverName: string): number {
-  const pressure = normalizeRegion4Pressure(p);
+  const pressure = p < C.Pt && C.Pt - p <= 8 * Number.EPSILON * C.Pt ? C.Pt : normalizeRegion4Pressure(p);
   if (pressure < C.Pt || pressure > C.Pc) {
     throw new OutOfRangeError('Pressure', p, C.Pt, C.Pc);
   }
@@ -43,7 +41,7 @@ export function assertRegion4PressureStateInput(p: number, solverName: string): 
 }
 
 export function assertRegion4TemperatureStateInput(T: number, solverName: string): number {
-  const temperature = normalizeRegion4Temperature(T);
+  const temperature = T < C.Tt && C.Tt - T <= 8 * Number.EPSILON * C.Tt ? C.Tt : normalizeRegion4Temperature(T);
   if (temperature < C.Tt || temperature > C.Tc) {
     const error = new OutOfRangeError('Temperature', T, C.Tt, C.Tc);
     if (temperature < C.Tt) {

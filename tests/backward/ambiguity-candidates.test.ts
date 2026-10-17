@@ -37,7 +37,7 @@ function expectCandidates(
   expect(pressures).toEqual([...pressures].sort((a, b) => a - b));
   for (const candidate of candidates) {
     expect(candidate.temperature).toBe(T);
-    expect(candidate[property]).toBe(target);
+    expect(Math.abs(candidate[property] - target)).toBeLessThanOrEqual(property === 'enthalpy' ? 1e-9 : 1e-12);
     for (const field of ['density', 'viscosity', 'thermalConductivity', 'surfaceTension', 'dielectricConstant', 'ionizationConstant']) {
       expect(candidate).not.toHaveProperty(field);
     }
@@ -45,6 +45,7 @@ function expectCandidates(
       ? solveBasic({ mode: 'Tx', T, x: candidate.quality! })
       : solveBasic({ mode: 'PT', T, p: candidate.pressure });
     expect(reconstructed.region).toBe(candidate.region);
+    expect(candidate[property]).toBe(reconstructed[property]);
     expect(Math.abs(reconstructed[property] - target)).toBeLessThanOrEqual(property === 'enthalpy' ? 1e-7 : 1e-10);
     expect(candidate.specificVolume).toBeCloseTo(reconstructed.specificVolume, 12);
     if (candidate.saturation !== undefined) {
@@ -91,7 +92,7 @@ describe('TH/TS ambiguity candidates', () => {
     expectCandidates(candidates, first.temperature, first.enthalpy, 'enthalpy');
   });
 
-  it('publicly normalizes candidates after validation', () => {
+  it('preserves validated candidates without rounding their coordinates', () => {
     const wet = solveTx(473.15, 0.001);
     const validate = validation.validateBackwardState;
     vi.spyOn(validation, 'validateBackwardState').mockImplementationOnce((...args) => {
@@ -99,7 +100,7 @@ describe('TH/TS ambiguity candidates', () => {
       return { ...state, temperature: state.temperature + Number.EPSILON * state.temperature };
     });
     const { candidates } = ambiguity(() => solveTH(wet.temperature, wet.enthalpy));
-    expect(candidates[0].temperature).toBe(wet.temperature);
+    expect(candidates[0].temperature).toBe(wet.temperature + Number.EPSILON * wet.temperature);
     expect(candidates[0].saturation!.temperature).toBe(wet.temperature);
   });
 

@@ -15,6 +15,7 @@ import { region3ByRhoT } from '../regions/region3.js';
 import { saturationPressure, saturationPressurePair, saturationTemperature } from '../regions/region4.js';
 import { region3SatVolume } from '../regions/region3-subregions.js';
 import { solveRegion3StateAtPressure } from '../core/region3-pt.js';
+import { nextPositiveFloat } from '../core/floating-point.js';
 import {
   normalizeRegion4Pressure,
   normalizeRegion4Temperature,
@@ -134,10 +135,7 @@ export function saturationEndpointsAtPressure(p: number): SaturationEndpoints {
   if ((pressure > REGION12_SATURATION_PRESSURE && temperature <= R2_T_MIN) ||
       (pressure < REGION12_SATURATION_PRESSURE && temperature >= R2_T_MIN)) {
     // Keep a rounded derived temperature on the pressure's formula side.
-    const view = new DataView(new ArrayBuffer(8));
-    view.setFloat64(0, R2_T_MIN);
-    view.setBigUint64(0, view.getBigUint64(0) + (pressure > REGION12_SATURATION_PRESSURE ? 1n : -1n));
-    temperature = view.getFloat64(0);
+    temperature = nextPositiveFloat(R2_T_MIN, pressure > REGION12_SATURATION_PRESSURE ? 1 : -1);
   }
   return buildSaturationEndpoints(pressure, temperature);
 }

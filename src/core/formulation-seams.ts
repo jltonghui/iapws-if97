@@ -9,6 +9,7 @@ import { bracketedNewton } from '../solvers/bracketed-newton.js';
 import { gibbsPropertyDerivatives } from './thermodynamic-derivatives.js';
 import { solveRegion3PTBasic } from './region3-pt.js';
 import { detectRegionPT, nativeB23TemperatureBracket } from './region-detector.js';
+import { nextPositiveFloat } from './floating-point.js';
 
 export type FormulationSeam = '13' | '23' | '25';
 
@@ -121,17 +122,17 @@ export function matchFixedSeam(
   if (!Number.isFinite(target) || target < Math.min(lower, upper) || target > Math.max(lower, upper)) return null;
   if (target === pair.canonical[property]) return resolution(pair, 'canonical');
   const interior = coordinate === 'temperature'
-    ? region2(nextFloat(pair.pressure, -1), pair.temperature)
-    : pair.seam === '13' ? solveRegion3PTBasic(pair.pressure, nextFloat(pair.temperature, 1))
-    : pair.seam === '23' ? region2(pair.pressure, nextFloat(pair.temperature, 1))
-    : region5(pair.pressure, nextFloat(pair.temperature, 1));
+    ? region2(nextPositiveFloat(pair.pressure, -1), pair.temperature)
+    : pair.seam === '13' ? solveRegion3PTBasic(pair.pressure, nextPositiveFloat(pair.temperature, 1))
+    : pair.seam === '23' ? region2(pair.pressure, nextPositiveFloat(pair.temperature, 1))
+    : region5(pair.pressure, nextPositiveFloat(pair.temperature, 1));
   // EOS rounding can put the first admissible float inside the endpoint's gap.
   if (coordinate === 'pressure' && detectRegionPT(interior.pressure, interior.temperature) === interior.region &&
       Math.abs(interior[property] - target) <= (property === 'enthalpy' ? 1e-9 : 1e-12)) {
     return resolution({ ...pair, canonical: interior }, 'canonical');
   }
   if (coordinate === 'temperature') {
-    if (interior[property] === target) return null;
+    if (target !== upper && interior[property] === target) return null;
     const first = gibbsPropertyDerivatives(pair.lower);
     const second = gibbsPropertyDerivatives(pair.upper);
     const derivative = property === 'enthalpy' ? 'dhDp' : 'dsDp';
@@ -162,13 +163,6 @@ interface HSSeamDomain {
 
 let hsDomains: HSSeamDomain[] | undefined;
 
-function nextFloat(value: number, direction: 1 | -1): number {
-  const view = new DataView(new ArrayBuffer(8));
-  view.setFloat64(0, value);
-  view.setBigUint64(0, view.getBigUint64(0) + BigInt(direction));
-  return view.getFloat64(0);
-}
-
 function b23LowerTemperature(): number {
   let lower = C.R2_T_MIN;
   let upper = C.Tc;
@@ -190,7 +184,7 @@ function hsSeamDomains(): HSSeamDomain[] {
   if (hsDomains !== undefined) return hsDomains;
   hsDomains = (['13', '23', '25'] as const).map((seam) => {
     const lower = seam === '25' ? C.P_MIN : seam === '13'
-      ? nextFloat(saturationPressure(C.R2_T_MIN), 1) : b23LowerTemperature();
+      ? nextPositiveFloat(saturationPressure(C.R2_T_MIN), 1) : b23LowerTemperature();
     const upper = seam === '25' ? C.R5_P_MAX : seam === '13'
       ? C.P_MAX : nativeB23TemperatureBracket(C.P_MAX)[0];
     const nodes = [lower, upper];

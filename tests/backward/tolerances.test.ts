@@ -18,8 +18,8 @@ describe('backward enthalpy tolerance', () => {
     const constraints = [
       { label: 'pressure', expected: state.pressure + 1e-10 },
       { label: 'temperature', expected: state.temperature + 1e-9 },
-      { label: 'enthalpy', expected: state.enthalpy + 1e-5 },
-      { label: 'entropy', expected: state.entropy + 1e-7 },
+      { label: 'enthalpy', expected: state.enthalpy + 1e-8 },
+      { label: 'entropy', expected: state.entropy + 1e-10 },
     ] as const;
     const validated = validateBackwardState(state, constraints, { solverName: 'native-state-regression' });
 
@@ -29,13 +29,25 @@ describe('backward enthalpy tolerance', () => {
     }
   });
 
-  it('returns Region 1 EOS properties at the normalized PH boundary coordinates', () => {
-    const input = region1(99, 623.1500002);
-    const recovered = solvePH(input.pressure, input.enthalpy);
+  it.each([30, 66, 99, 100].flatMap((p) => (['PH', 'PS'] as const).map((mode) => ({ p, mode }))))(
+    'preserves the unique Region 3 $mode root within seam tolerance at p=$p MPa', ({ p, mode }) => {
+      const input = region1(p, 623.1500002);
+      const property = mode === 'PH' ? 'enthalpy' : 'entropy';
+      const recovered = mode === 'PH' ? solvePH(input.pressure, input.enthalpy) : solvePS(input.pressure, input.entropy);
+      const region1Seam = region1(p, 623.15)[property];
 
-    expect(recovered.temperature).toBe(623.15);
-    expect(recovered).toMatchObject(region1(recovered.pressure, recovered.temperature));
-  });
+      expect(input[property]).toBeGreaterThan(region1Seam);
+      expect(input[property] - region1Seam).toBeLessThan(1e-9 * Math.abs(region1Seam));
+      expect(input[property]).toBeGreaterThan(solveRegion3PTBasic(p, 623.15)[property]);
+      expect(recovered.temperature).toBeGreaterThan(623.15);
+      for (const state of [recovered, solvePT(p, recovered.temperature)]) {
+        expect(state.region).toBe(Region.Region3);
+        expect(Math.abs(state[property] - input[property])).toBeLessThan(mode === 'PH' ? 1e-8 : 1e-11);
+      }
+      const native = region3ByRhoT(1 / recovered.specificVolume, recovered.temperature);
+      expect(Math.abs(native[property] - recovered[property])).toBeLessThan(mode === 'PH' ? 1e-9 : 1e-12);
+    },
+  );
 
   it('checks the enthalpy constraint again after boundary EOS recomputation', () => {
     const state = region1(99, 623.1500002);
@@ -68,13 +80,13 @@ describe('backward enthalpy tolerance', () => {
       .toEqual(region5(50, 2273.15));
   });
 
-  it('uses a spec-scale default tolerance for enthalpy constraints', () => {
-    expect(backwardConstraintTolerance('enthalpy', 3000)).toBeCloseTo(0.003, 12);
+  it('uses a 1e-9 relative default tolerance for enthalpy constraints', () => {
+    expect(backwardConstraintTolerance('enthalpy', 3000)).toBeCloseTo(3e-6, 12);
   });
 
   it('rejects enthalpy mismatches above the tightened default tolerance', () => {
     const state = solvePT(0.0035, 700);
-    const drifted = { ...state, enthalpy: state.enthalpy + 0.01 };
+    const drifted = { ...state, enthalpy: state.enthalpy + 1e-4 };
 
     expect(() =>
       validateBackwardState(

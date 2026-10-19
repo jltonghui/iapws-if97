@@ -179,14 +179,25 @@ describe('TH/TS ambiguity candidates', () => {
     { name: 'property residual', invalid: { enthalpy: -1 } },
     { name: 'volume envelope', invalid: { specificVolume: -1 } },
     { name: 'region consistency', invalid: { region: Region.Region2 } },
-  ])('rejects an invalid $name before publishing candidates', ({ invalid }) => {
+  ])('filters an invalid $name before choosing the remaining valid candidate', ({ invalid }) => {
     const wet = solveTx(473.15, 0.001);
     const solvePressure = pressureSolver.solveFixedTemperaturePressure;
     vi.spyOn(pressureSolver, 'solveFixedTemperaturePressure').mockImplementation((...args) => ({
       ...solvePressure(...args),
       ...invalid,
     }));
-    expect(() => solveTH(wet.temperature, wet.enthalpy)).toThrow(IF97Error);
-    expect(() => solveTH(wet.temperature, wet.enthalpy)).not.toThrow(AmbiguousStateError);
+    const recovered = solveTH(wet.temperature, wet.enthalpy);
+    expect(recovered.region).toBe(Region.Region4);
+    expect(recovered.enthalpy).toBe(wet.enthalpy);
+    expect(recovered.quality).toBeCloseTo(wet.quality!, 12);
+  });
+
+  it('preserves numerical failure instead of declaring the remaining candidate unique', () => {
+    const wet = solveTx(473.15, 0.001);
+    const solvePressure = pressureSolver.solveFixedTemperaturePressure;
+    vi.spyOn(pressureSolver, 'solveFixedTemperaturePressure').mockImplementation((...args) => ({
+      ...solvePressure(...args), enthalpy: Number.NaN,
+    }));
+    expect(() => solveTH(wet.temperature, wet.enthalpy)).toThrow('failed to match enthalpy');
   });
 });

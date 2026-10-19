@@ -12,9 +12,8 @@ import { Region, IF97Error, OutOfRangeError } from '../types.js';
 import { RegionMismatchError } from '../errors.js';
 import * as C from '../constants.js';
 import { assertFiniteNumber, withinClosedLowerBound } from '../core/input-validation.js';
-import { classifyRegionHS } from './hs-region.js';
-import { findHSSeam } from '../core/formulation-seams.js';
-import { solveHSInRegion, solveHSSeam } from './hs-state.js';
+import { classifyRegionHS, type HSClassificationCandidate } from './hs-region.js';
+import { solveHSInRegion } from './hs-state.js';
 import { assertCriticalRegion4HSInput } from '../saturation/region4-boundaries.js';
 
 /**
@@ -34,9 +33,9 @@ export function solveHS(h: number, s: number): BasicProperties {
   }
   assertCriticalRegion4HSInput(h, s, 'solveHS');
 
-  const seam = findHSSeam(h, s);
-  if (seam !== null) return solveHSSeam(h, s, seam);
-  const region = classifyRegionHS(h, s);
+  const candidate: HSClassificationCandidate = {};
+  const region = classifyRegionHS(h, s, candidate);
+  if (candidate.state !== undefined) return candidate.state;
   try {
     return solveHSInRegion(h, s, region);
   } catch (error) {

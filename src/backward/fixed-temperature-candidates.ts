@@ -1,5 +1,7 @@
 import * as C from '../constants.js';
 import { solveRegion3PTBasic } from '../core/region3-pt.js';
+import { nextPositiveFloat } from '../core/floating-point.js';
+import { NumericalStateError } from '../errors.js';
 import { formulationSeamAtTemperature, matchFixedSeam } from '../core/formulation-seams.js';
 import { boundary23_T_to_P } from '../regions/boundaries.js';
 import { region1 } from '../regions/region1.js';
@@ -14,7 +16,8 @@ import type { BasicProperties } from '../types.js';
 import { AmbiguousStateError, OutOfRangeError } from '../types.js';
 import { createFixedTemperatureStationaryPressureFinder } from './fixed-temperature-stationary.js';
 import { solveFixedTemperaturePressure, type FixedTemperatureProperty } from './fixed-temperature-solver.js';
-import { validateBackwardState } from './solution-validation.js';
+import { backwardCandidateError, validateBackwardState } from './solution-validation.js';
+import { fixedTemperatureRootTolerance } from './tolerances.js';
 
 /** Return the only physical TH/TS state, or null if unresolved; proven envelope violations throw. */
 export function uniqueFixedTemperatureState(
@@ -27,7 +30,11 @@ export function uniqueFixedTemperatureState(
   }
 
   const solverName = property === 'enthalpy' ? 'solveTH' : 'solveTS';
-  const rootTolerance = property === 'enthalpy' ? 1e-9 : 1e-12;
+  const rootTolerance = fixedTemperatureRootTolerance(property);
+  const constraints = [
+    { label: 'temperature', expected: T },
+    { label: property, expected: target },
+  ] as const;
   const candidates: BasicProperties[] = [];
   let propertyMin = Infinity;
   let propertyMax = -Infinity;
@@ -41,6 +48,11 @@ export function uniqueFixedTemperatureState(
     Math.abs(first.specificVolume - second.specificVolume) <=
       1e-9 * Math.max(first.specificVolume, second.specificVolume);
   const add = (state: BasicProperties, incident = false): void => {
+    if (state !== seam?.state) {
+      const error = backwardCandidateError(state, constraints, { solverName });
+      if (error instanceof NumericalStateError) throw error;
+      if (error !== null) return;
+    }
     // The same saturation endpoint or stationary point can bound two intervals.
     let existing = candidates.find((other) => sameState(other, state));
     if (existing !== undefined && incident && seam?.kind === 'overlap' &&
@@ -95,10 +107,7 @@ export function uniqueFixedTemperatureState(
       }
       if (!currentIncluded && Math.abs(residual) <= rootTolerance && !currentMatches) {
         // The closest admissible float is the endpoint of the supported pressure domain.
-        const bits = new DataView(new ArrayBuffer(8));
-        bits.setFloat64(0, current.pressure);
-        bits.setBigUint64(0, bits.getBigUint64(0) + (i === 0 ? 1n : -1n));
-        const pressure = bits.getFloat64(0);
+        const pressure = nextPositiveFloat(current.pressure, i === 0 ? 1 : -1);
         if (pressure > lower.pressure && pressure < upper.pressure) {
           const interior = stateAt(pressure, T);
           if (Math.abs(interior[property] - target) <= rootTolerance) {
@@ -149,7 +158,7 @@ export function uniqueFixedTemperatureState(
         true, false);
     } else {
       const p23 = boundary23_T_to_P(T);
-      addInterval(region2, region2(C.P_MIN, T), region2(p23, T), true, false);
+      addInterval(region2, region2(C.P_MIN, T), region2(Math.min(p23, endpoints.pressure), T), true, false);
       // Keep the vapor and liquid Region 3 branches separate at saturation.
       addInterval(solveRegion3PTBasic,
         solveRegion3PTBasic(p23, T), endpoints.vapor);
@@ -185,10 +194,7 @@ export function uniqueFixedTemperatureState(
     );
   }
 
-  const validate = (state: BasicProperties): BasicProperties => validateBackwardState(state, [
-    { label: 'temperature', expected: T },
-    { label: property, expected: target },
-  ], {
+  const validate = (state: BasicProperties): BasicProperties => validateBackwardState(state, constraints, {
     solverName,
     expectedRegion: state.region,
     ...(seam !== null && state === seam.state ? { seam } : {}),

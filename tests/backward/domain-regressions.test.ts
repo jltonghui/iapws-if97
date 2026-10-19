@@ -436,19 +436,24 @@ describe('Public domain round-trip regressions', () => {
     expect(recovered.cp).not.toBeNull();
   });
 
-  it.each([623.150001, 623.1501])('prefers PT-owned vapor in the Region 4 fit overlap above the 623.15 K seam at T=%s K', (T) => {
+  it.each([623.150001, 623.1501])('prefers saturation in the Region 4 fit overlap above the 623.15 K seam at T=%s K', (T) => {
     const forward = solveTx(T, 1 - 1e-9);
     for (const [property, backward] of [['enthalpy', solvePH], ['entropy', solvePS]] as const) {
       const recovered = backward(forward.pressure, forward[property]);
-      const reconstructed = solvePT(recovered.pressure, recovered.temperature);
-      expect(recovered.region).toBe(Region.Region2);
-      expect(reconstructed.region).toBe(Region.Region2);
-      expect(recovered.quality).toBeNull();
-      expect(recovered.temperature).toBeGreaterThan(T);
+      const reconstructed = solveTx(recovered.temperature, recovered.quality!);
+      expect(recovered.region).toBe(Region.Region4);
+      expect(reconstructed.region).toBe(Region.Region4);
+      expect(recovered.quality).toBeCloseTo(forward.quality!, 10);
+      expect(recovered.temperature).toBe(T);
+      expect(recovered.saturation).toEqual(forward.saturation);
+      expect(recovered.cp).toBeNull();
+      expect(recovered.viscosity).toBeNull();
+      expect(recovered.thermalConductivity).toBeNull();
       expectBackwardValue(recovered.pressure, forward.pressure, 'pressure');
-      expectBackwardValue(recovered[property], forward[property], property);
-      expectBackwardValue(recovered.enthalpy, reconstructed.enthalpy, 'enthalpy');
-      expectBackwardValue(recovered.entropy, reconstructed.entropy, 'entropy');
+      expectBackwardValue(recovered.enthalpy, forward.enthalpy, 'enthalpy', 1e-7);
+      expectBackwardValue(recovered.entropy, forward.entropy, 'entropy', 1e-10);
+      expectBackwardValue(recovered.enthalpy, reconstructed.enthalpy, 'enthalpy', 1e-7);
+      expectBackwardValue(recovered.entropy, reconstructed.entropy, 'entropy', 1e-10);
     }
   });
 

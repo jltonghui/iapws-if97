@@ -28,4 +28,5 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run test:package
+      - run: node scripts/scan-saturation.mjs
       - run: npm run test:coverage

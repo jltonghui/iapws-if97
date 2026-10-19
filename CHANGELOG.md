@@ -13,9 +13,14 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - Remove public decimal snapping and return computed backward properties without input overwrites. Region 3 PT inversion preserves input pressure after checking EOS convergence.
+- Tighten ordinary backward enthalpy and entropy acceptance to `1e-9 × max(1, |input|)`, with separate endpoint resolution and local fit-gap budgets.
 
 ### Fixed
 
+- Preserve PH/PS single-phase roots outside the actual saturation property span, including those near endpoints.
+- Recover HS Region 3 roots at `100 MPa` / `623.15 K` before rejecting the Region 1 upper envelope; reuse classification candidates.
+- Share PH/PS and HS seam validation and ownership selection. If no candidate succeeds, propagate numerical failures before any fit-gap fallback.
+- Preserve HS input constraints when projecting low-pressure saturation boundaries; filter invalid TH/TS candidates before resolving ambiguity.
 - Correct two transcribed coefficients in Region 1 and Region 3b `p(h,s)` equations, verified against official check values.
 - Correct nine more coefficient transcription errors in Region 3 `v(p,T)`, HS boundaries, `p(h,s)`, and Region 2a `T(p,h)`/`T(p,s)`. Public `region3Volume` results change; refined solver results can change in their last floating-point bits.
 - Refine Gibbs HS states to recover the minimum-pressure boundary with the existing acceptance tolerance.
@@ -31,7 +36,7 @@ All notable changes to this project will be documented in this file.
 - Correct global enthalpy and entropy limits, computing upper limits from the Region 5 equation of state at module initialization to match runtime rounding.
 - Correct HS classification for cold liquids and at Region 1/3 and Region 2/5 boundaries; use computed saturation endpoints in the HS residual.
 - Preserve HS endpoint quality and single-phase properties when the endpoint EOS exactly reproduces input enthalpy and entropy.
-- Preserve exact PH/PS saturation endpoints at `623.15 K`; above the corner, recover superheated Region 2 roots selected by `solvePT` when their properties overlap the saturation span.
+- Prefer PH/PS saturation states in Region 2 overlaps near `623.15 K`, preventing jumps for wet steam and rounded saturation endpoints.
 - Revalidate backward states before resolving B23 rounding.
 - Recompute single-phase EOS properties after backward pressure or temperature boundary normalization.
 - Tighten Region 3 PT pressure convergence to relative `1e-12` and use the shared relative `1e-9` pressure acceptance tolerance for PH/PS.

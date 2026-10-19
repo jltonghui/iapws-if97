@@ -6,11 +6,12 @@
  */
 import type { BasicProperties } from '../types.js';
 import * as C from '../constants.js';
-import { IF97Error } from '../types.js';
+import { ConvergenceError, IF97Error } from '../types.js';
 import { region3ByRhoT, region3PressureResidual } from '../regions/region3.js';
 import { region3Volume } from '../regions/region3-subregions.js';
 import { saturationPressure, saturationPressurePair } from '../regions/region4.js';
 import { newtonRaphson } from '../solvers/newton-raphson.js';
+import { bracketedNewton } from '../solvers/bracketed-newton.js';
 
 /**
  * Solve for the Region 3 state at a target pressure and temperature.
@@ -40,23 +41,28 @@ export function solveRegion3StateAtPressure(
     return cachedState;
   };
 
-  const rho = newtonRaphson(
-    (rhoGuess) => {
-      if (!Number.isFinite(rhoGuess) || rhoGuess <= 0) {
-        return Number.NaN;
-      }
-      return region3PressureResidual(rhoGuess, T, p, pressureLow);
-    },
-    rho0,
-    (rhoGuess) => {
-      if (!Number.isFinite(rhoGuess) || rhoGuess <= 0) {
-        return Number.NaN;
-      }
-      const kappa = stateAt(rhoGuess).isothermalCompressibility;
-      return kappa === null ? Number.NaN : 1 / (rhoGuess * kappa);
-    },
-    { tolerance: 1e-12 },
-  );
+  const residual = (rhoGuess: number): number => {
+    if (!Number.isFinite(rhoGuess) || rhoGuess <= 0) return Number.NaN;
+    return region3PressureResidual(rhoGuess, T, p, pressureLow);
+  };
+  const derivative = (rhoGuess: number): number => {
+    if (!Number.isFinite(rhoGuess) || rhoGuess <= 0) return Number.NaN;
+    const kappa = stateAt(rhoGuess).isothermalCompressibility;
+    return kappa === null ? Number.NaN : 1 / (rhoGuess * kappa);
+  };
+  let rho: number;
+  try {
+    rho = newtonRaphson(residual, rho0, derivative, { tolerance: 1e-12 });
+  } catch (error) {
+    // Subcritical brackets can cross a spinodal and change the requested phase.
+    if (!(error instanceof ConvergenceError) || T < C.Tc) throw error;
+    const lower = rho0 / 2;
+    const upper = rho0 * 2;
+    if (!(derivative(lower) > 0 && derivative(upper) > 0 && residual(lower) * residual(upper) <= 0)) throw error;
+    rho = bracketedNewton(residual, lower, upper, rho0, {
+      derivative, tolerance: 1e-12, residualTolerance: 0,
+    });
+  }
 
   return stateAt(rho);
 }

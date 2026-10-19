@@ -1,11 +1,52 @@
 import { describe, expect, it, vi } from 'vitest';
-import { Region, solveHS, solvePT, solvePx, solveTx } from '../../src/index.js';
+import { Region, solve, solveBasic, solveHS, solvePT, solvePx, solveTx } from '../../src/index.js';
 import { detectRegionHS } from '../../src/detect.js';
 import { P_MIN } from '../../src/constants.js';
 import * as region4HS from '../../src/saturation/region4-hs.js';
 import { expectBackwardValue, expectRegion4RoundTrip } from '../helpers/backward-assertions.js';
 
 describe('HS saturation coordinate regressions', () => {
+  it.each([
+    { T: 274, x: 3e-11 },
+    { T: 288.7579852523744, x: 6.161571519404348e-11 },
+  ])('retains an interior mixture when endpoint snapping violates H/S acceptance at T=$T, x=$x', ({ T, x }) => {
+    const forward = solveTx(T, x);
+    const h = forward.enthalpy;
+    const s = forward.entropy;
+    expect(detectRegionHS(h, s)).toBe(Region.Region4);
+
+    for (const recovered of [solveHS(h, s), solve({ mode: 'HS', h, s }), solveBasic({ mode: 'HS', h, s })]) {
+      expect(recovered.region).toBe(Region.Region4);
+      expect(recovered.quality).toBeGreaterThan(0);
+      expect(recovered.quality).toBeLessThan(1);
+      expect(recovered.cp).toBeNull();
+      const checked = solveTx(recovered.temperature, recovered.quality!);
+      for (const property of ['enthalpy', 'entropy'] as const) {
+        const tolerance = 1e-9 * Math.max(1, Math.abs(forward[property]));
+        expect(Math.abs(recovered[property] - forward[property])).toBeLessThanOrEqual(tolerance);
+        expect(checked[property]).toBe(recovered[property]);
+      }
+    }
+    expect(solve({ mode: 'HS', h, s }).viscosity).toBeNull();
+  });
+
+  it.each([
+    { mode: 'Tx', T: 274, x: 0 },
+    { mode: 'Tx', T: 274, x: 1 },
+    { mode: 'Tx', T: 273.1601, x: 0 },
+    { mode: 'Tx', T: 274.15, x: 0 },
+    { mode: 'Tx', T: 275, x: 0 },
+    { mode: 'Px', p: 0.0006116575, x: 0 },
+  ] as const)('preserves a cold exact endpoint and its transport metadata for %o', (input) => {
+    const forward = solve(input);
+    const recovered = solve({ mode: 'HS', h: forward.enthalpy, s: forward.entropy });
+    expect(recovered.region).toBe(Region.Region4);
+    expect(recovered.quality).toBe(input.x);
+    expect(recovered.cp).not.toBeNull();
+    expect(recovered.viscosity).not.toBeNull();
+    expect(recovered.saturation).toBeDefined();
+  });
+
   it.each([
     { p: 17.969098460653143, T: 630, x: 1, hTolerance: 1e-7, sTolerance: 1e-10 },
     { p: 16.529164252605597, T: 623.1500000000001, x: 0, hTolerance: 1e-9, sTolerance: 1e-12 },

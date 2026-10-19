@@ -1,11 +1,10 @@
 import * as C from '../constants.js';
 import { createFixedTemperatureStationaryPressureFinder } from './fixed-temperature-stationary.js';
 import { solveHSInRegion, solveHSSeam } from './hs-state.js';
-import { helmholtzPropertyDerivatives } from '../core/thermodynamic-derivatives.js';
+import { nextPositiveFloat } from '../core/floating-point.js';
 import { boundary23_T_to_P } from '../regions/boundaries.js';
 import { region1 } from '../regions/region1.js';
 import { region2 } from '../regions/region2.js';
-import { region3ByRhoT } from '../regions/region3.js';
 import { region5 } from '../regions/region5.js';
 import { saturationEndpointsAtTemperature, type SaturationEndpoints } from '../saturation/common.js';
 import { tryRegion4HSState } from '../saturation/region4-hs.js';
@@ -15,6 +14,11 @@ import { bracketedNewton } from '../solvers/bracketed-newton.js';
 import { solveRegion3PTBasic } from '../core/region3-pt.js';
 import { findHSSeam } from '../core/formulation-seams.js';
 import { withinClosedLowerBound } from '../core/input-validation.js';
+import { resolveBackwardCandidates } from './candidate-resolution.js';
+
+export interface HSClassificationCandidate {
+  state?: BasicProperties;
+}
 
 /** Check approximate equality with relative tolerance. */
 function isClose(a: number, b: number): boolean {
@@ -268,7 +272,7 @@ function hsBoundaryAtEntropy(
   upper: number,
   isobar: boolean,
   stateAt: (value: number) => BasicProperties,
-): { enthalpy: number; tolerance: number } {
+): { enthalpy: number; tolerance: number; state: BasicProperties } {
   const entropyTolerance = HS_BOUNDARY_ENTROPY_TOLERANCE;
   const value = bracketedNewton(
     (candidate) => stateAt(candidate).entropy - s,
@@ -293,42 +297,29 @@ function hsBoundaryAtEntropy(
   const tolerance = slope * Math.max(entropyTolerance, Math.abs(state.entropy - s)) + 8 * Number.EPSILON * (
     Math.max(1, Math.abs(state.enthalpy)) + slope * Math.max(1, Math.abs(s))
   );
-  return { enthalpy: state.enthalpy, tolerance };
+  return { enthalpy: state.enthalpy, tolerance, state };
 }
 
-function inRegion3LowerHSEnvelope(h: number, s: number): boolean {
-  if (s < HS_R3_PMAX_623.entropy || s >= HS_S13) return false;
+function region3LowerHSCandidate(h: number, s: number): BasicProperties | null {
+  const entropySpan = Math.abs(HS_S13 - HS_R3_PMAX_623.entropy);
+  if (s >= HS_S13 || Math.abs(s - HS_R3_PMAX_623.entropy) > entropySpan) return null;
+  const lowerTemperature = nextPositiveFloat(C.R2_T_MIN, 1);
+  const lowerState = solveRegion3PTBasic(C.P_MAX, lowerTemperature);
+  if (s < lowerState.entropy - HS_BOUNDARY_ENTROPY_TOLERANCE) return null;
+  const boundary = hsBoundaryAtEntropy(
+    s, lowerTemperature, C.B23_T_MAX, true,
+    (T) => T === lowerTemperature ? lowerState : solveRegion3PTBasic(C.P_MAX, T),
+  );
+  // Region 3 EOS reconstruction adds cancellation beyond boundary inversion roundoff.
+  if (h > boundary.enthalpy + boundary.tolerance + 1e-9) return null;
 
-  // Independent Region 1/3 fits leave a narrow R3 entropy slice below HS_S13.
-  const upperRho = 1 / HS_R3_PMAX_623.specificVolume;
-  const lowerStateAt = (rho: number): BasicProperties => rho === upperRho
-    ? HS_R3_PMAX_623
-    : region3ByRhoT(rho, C.R2_T_MIN);
-  const rho = bracketedNewton(
-    (candidate) => lowerStateAt(candidate).entropy - s,
-    1 / HS_R1_PMAX_623.specificVolume,
-    upperRho,
-    undefined,
-    {
-      tolerance: 1e-12,
-      derivative: (candidate) => helmholtzPropertyDerivatives(
-        lowerStateAt(candidate), candidate,
-      ).dsDrho,
-    },
-  );
-  const hLower = lowerStateAt(rho).enthalpy;
-  const temperature = bracketedNewton(
-    (T) => solveRegion3PTBasic(C.P_MAX, T).entropy - s,
-    C.R2_T_MIN,
-    C.B23_T_MAX,
-    C.R2_T_MIN,
-    {
-      tolerance: 1e-12,
-      derivative: (T) => (solveRegion3PTBasic(C.P_MAX, T).cp ?? Number.NaN) / T,
-    },
-  );
-  const hUpper = solveRegion3PTBasic(C.P_MAX, temperature).enthalpy;
-  return h > hLower && (h <= hUpper || isClose(h, hUpper));
+  return resolveBackwardCandidates([
+    () => solveHSInRegion(h, s, Region.Region3, undefined, false),
+    () => solveHSInRegion(h, s, Region.Region3, boundary.state, false),
+  ], [
+    { label: 'enthalpy', expected: h },
+    { label: 'entropy', expected: s },
+  ], { solverName: 'solveHS' });
 }
 
 function hSatLow(s: number): number {
@@ -440,52 +431,30 @@ function r2R5BoundaryEnthalpy(
   lowEntropy: number,
   highEntropy: number,
   stateAtPressure: (p: number) => BasicProperties,
-): number | null {
+): { enthalpy: number; tolerance: number } | null {
   if (s < lowEntropy || s > highEntropy) return null;
-
-  let lower = C.P_MIN;
-  let upper = C.R5_P_MAX;
-  const fraction = (highEntropy - s) / (highEntropy - lowEntropy);
-  let p = Math.exp(Math.log(lower) + fraction * (Math.log(upper) - Math.log(lower)));
-
-  for (let iteration = 0; iteration < 12; iteration += 1) {
-    const state = stateAtPressure(p);
-    const residual = state.entropy - s;
-    if (Math.abs(residual) <= 1e-12 * Math.max(1, Math.abs(s))) {
-      return state.enthalpy;
-    }
-
-    if (residual > 0) lower = p;
-    else upper = p;
-
-    const alpha = state.isobaricExpansion;
-    const derivative = alpha === null ? Number.NaN : -1000 * state.specificVolume * alpha;
-    const candidate = p - residual / derivative;
-    p = Number.isFinite(candidate) && candidate > lower && candidate < upper
-      ? candidate
-      : (lower + upper) / 2;
-  }
-
-  return stateAtPressure(p).enthalpy;
+  return hsBoundaryAtEntropy(s, C.P_MIN, C.R5_P_MAX, false, stateAtPressure);
 }
 
-function classifyRegion5HS(h: number, s: number): Region.Region5 | -1 | null {
+function classifyRegion5HS(h: number, s: number, solved?: HSClassificationCandidate): Region.Region5 | -1 | null {
   if (!(HS_R5_LOWER.entropy < s && s <= HS_R5_UPPER.entropy)) {
     return null;
   }
 
-  const region2BoundaryH = r2R5BoundaryEnthalpy(
+  const region2Boundary = r2R5BoundaryEnthalpy(
     s,
     HS_R2_R5_PMAX.entropy,
     HS_R2_PMIN_TMAX.entropy,
     (p) => region2(p, C.R2_T_MAX),
   );
-  const region5BoundaryH = r2R5BoundaryEnthalpy(
+  const region5Boundary = r2R5BoundaryEnthalpy(
     s,
     HS_R5_LOWER.entropy,
     HS_R5_PMIN_TMIN.entropy,
     (p) => region5(p, C.R5_T_MIN),
   );
+  const region2BoundaryH = region2Boundary?.enthalpy ?? null;
+  const region5BoundaryH = region5Boundary?.enthalpy ?? null;
 
   const checkedRegion5 = (): Region.Region5 | null => {
     const isobar = s <= HS_R5_PMAX_TMAX.entropy;
@@ -510,6 +479,19 @@ function classifyRegion5HS(h: number, s: number): Region.Region5 | -1 | null {
     }
     return Region.Region5;
   };
+
+  if (region5Boundary !== null && Math.abs(h - region5Boundary.enthalpy) <= region5Boundary.tolerance) {
+    try {
+      const candidate = solveHSInRegion(h, s, Region.Region5);
+      if (candidate.temperature > C.R5_T_MIN) {
+        const region = checkedRegion5();
+        if (region !== null && solved !== undefined) solved.state = candidate;
+        return region;
+      }
+    } catch (error) {
+      if (!(error instanceof IF97Error)) throw error;
+    }
+  }
 
   if (region2BoundaryH === null) {
     return region5BoundaryH === null || h > region5BoundaryH
@@ -547,15 +529,15 @@ function classifyRegion5HS(h: number, s: number): Region.Region5 | -1 | null {
 }
 
 /** Share HS classification, throwing range errors only for proven envelope violations. */
-export function classifyRegionHS(h: number, s: number): Region | -1 {
+export function classifyRegionHS(h: number, s: number, solved?: HSClassificationCandidate): Region | -1 {
+  const accept = (state: BasicProperties): Region => {
+    if (solved !== undefined) solved.state = state;
+    return state.region;
+  };
   const seam = findHSSeam(h, s);
   if (seam !== null) {
-    try {
-      return solveHSSeam(h, s, seam).region;
-    } catch (error) {
-      if (!(error instanceof IF97Error)) throw error;
-      return -1;
-    }
+    const candidate = solveHSSeam(h, s, seam);
+    return candidate === null ? -1 : accept(candidate);
   }
   // Move both inverse roots inside the forbidden gap before accounting for near-tangent roundoff.
   const gapEntropy = s + 4 * HS_BOUNDARY_ENTROPY_TOLERANCE;
@@ -605,7 +587,7 @@ export function classifyRegionHS(h: number, s: number): Region | -1 {
     }
   }
 
-  const highTemperatureRegion = classifyRegion5HS(h, s);
+  const highTemperatureRegion = classifyRegion5HS(h, s, solved);
   if (highTemperatureRegion !== null) return highTemperatureRegion;
 
   if (s >= HS_R2_PMIN_TMIN.entropy && s <= HS_R2_PMIN_TMAX.entropy) {
@@ -635,7 +617,9 @@ export function classifyRegionHS(h: number, s: number): Region | -1 {
     const boundary = refinedSaturationBoundaryEnthalpy(h, s, approximateHs);
     const hs = boundary.enthalpy;
     const hmax = h1UpperBoundAtPmax(s);
-    if (h > hmax && !isClose(h, hmax) && !inRegion3LowerHSEnvelope(h, s)) {
+    if (h > hmax && !isClose(h, hmax)) {
+      const candidate = region3LowerHSCandidate(h, s);
+      if (candidate !== null) return accept(candidate);
       throw new OutOfRangeError(`Enthalpy upper envelope at s=${s}`, h, C.H_MIN, hmax);
     }
     const confirmedRegion4 = boundary.exact && h > hs
@@ -647,7 +631,6 @@ export function classifyRegionHS(h: number, s: number): Region | -1 {
 
     if (h >= hmin && h <= hs) return Region.Region4;
     if (h >= hs && (h <= hmax || isClose(h, hmax))) return Region.Region1;
-    if (inRegion3LowerHSEnvelope(h, s)) return Region.Region3;
   }
 
   // Zone 2: s13 < s <= s13s (Region 1 / Region 3 / Region 4)
@@ -710,7 +693,7 @@ export function classifyRegionHS(h: number, s: number): Region | -1 {
     if (confirmedRegion4 === false && h >= hmin) {
       for (const region of [Region.Region2, Region.Region3]) {
         try {
-          return solveHSInRegion(h, s, region).region;
+          return accept(solveHSInRegion(h, s, region));
         } catch (error) {
           if (!(error instanceof IF97Error)) throw error;
         }

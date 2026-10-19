@@ -1,14 +1,19 @@
 import * as C from '../constants.js';
 import { SaturationEndpointError } from '../errors.js';
-import { saturationTemperature } from '../regions/region4.js';
 import { region1 } from '../regions/region1.js';
 import { region2 } from '../regions/region2.js';
 import { region5 } from '../regions/region5.js';
 import { saturationEndpointsAtPressure } from '../saturation/common.js';
 import { OutOfRangeError, Region } from '../types.js';
-import { detectRegionPT, nativeB23TemperatureBracket, nativeSaturationTemperatureBracket } from '../core/region-detector.js';
+import type { BasicProperties } from '../types.js';
+import { nativeB23TemperatureBracket, nativeSaturationTemperatureBracket } from '../core/region-detector.js';
 import { withinClosedLowerBound } from '../core/input-validation.js';
 import { findPressureSeam, type FormulationSeamResolution } from '../core/formulation-seams.js';
+import { nextPositiveFloat } from '../core/floating-point.js';
+import { solveRegion3PTBasic } from '../core/region3-pt.js';
+import { bracketedNewton } from '../solvers/bracketed-newton.js';
+import { resolveBackwardCandidates } from './candidate-resolution.js';
+import { BACKWARD_PRESSURE_PROPERTY_TEMPERATURE_TOLERANCE } from './tolerances.js';
 
 /** Reject proven fixed-pressure envelope violations without classifying interior gaps. */
 export function assertPressurePropertyEnvelope(
@@ -44,7 +49,82 @@ export function pressurePropertySeam(
       if (!(error instanceof SaturationEndpointError)) throw error;
     }
   }
-  return match;
+  const solverName = property === 'enthalpy' ? 'solvePH' : 'solvePS';
+  const constraints = [{ label: 'pressure', expected: p }, { label: property, expected: target }] as const;
+  const state = resolveBackwardCandidates([
+    () => match.state[property] === target ? match.state : null,
+    () => pressureSeamRoot(p, target, property, match, match.pair.lower.region),
+    () => pressureSeamRoot(p, target, property, match, match.pair.upper.region),
+  ], constraints, { solverName, seam: match });
+  const resolved = state ?? (match.kind === 'canonical'
+    ? resolveBackwardCandidates([() => match.state], constraints, { solverName }) : null);
+  return resolved === null ? null : resolved === match.state ? match : { ...match, kind: 'canonical', state: resolved };
+}
+
+function pressureSeamRoot(
+  p: number,
+  target: number,
+  property: 'enthalpy' | 'entropy',
+  seam: FormulationSeamResolution,
+  region: Region,
+): BasicProperties | null {
+  let lower: number;
+  let upper: number;
+  let evaluate: (T: number) => BasicProperties;
+  if (region === Region.Region1) {
+    lower = C.T_MIN;
+    upper = C.R2_T_MIN;
+    evaluate = (T) => region1(p, T);
+  } else if (region === Region.Region2) {
+    lower = p > C.B23_P_MIN ? nativeB23TemperatureBracket(p)[1] : C.T_MIN;
+    if (p < C.Pc) lower = Math.max(lower, nativeSaturationTemperatureBracket(p)[1]);
+    upper = C.R2_T_MAX;
+    evaluate = (T) => region2(p, T);
+  } else if (region === Region.Region3) {
+    lower = nextPositiveFloat(C.R2_T_MIN, 1);
+    upper = nativeB23TemperatureBracket(p)[0];
+    if (p < C.Pc) {
+      const [liquidT, vaporT] = nativeSaturationTemperatureBracket(p);
+      if (seam.pair.seam === '13') upper = Math.min(upper, liquidT);
+      else lower = Math.max(lower, vaporT);
+    }
+    evaluate = (T) => solveRegion3PTBasic(p, T);
+  } else if (region === Region.Region5) {
+    lower = nextPositiveFloat(C.R5_T_MIN, 1);
+    upper = C.R5_T_MAX;
+    evaluate = (T) => region5(p, T);
+  } else {
+    return null;
+  }
+  if (lower > upper) return null;
+  const direction = region === seam.pair.lower.region ? -1 : 1;
+  const boundary = direction < 0 ? upper : lower;
+  const first = evaluate(boundary);
+  if (direction * (target - first[property]) < 0) return null;
+  if (target === first[property]) return first;
+  if (lower === upper) return null;
+  const slope = property === 'enthalpy' ? first.cp! : first.cp! / boundary;
+  let distance = Math.abs(target - first[property]) / slope;
+  let bracket: number;
+  while (true) {
+    bracket = Math.max(lower, Math.min(upper, boundary + direction * distance));
+    if (bracket === boundary) bracket = nextPositiveFloat(boundary, direction);
+    const last = evaluate(bracket);
+    if (direction * (last[property] - target) >= 0) break;
+    if (bracket === lower || bracket === upper) return null;
+    distance *= 2;
+  }
+  lower = Math.min(boundary, bracket);
+  upper = Math.max(boundary, bracket);
+  const temperature = bracketedNewton((T) => evaluate(T)[property] - target, lower, upper, undefined, {
+    derivative: (T) => {
+      const state = evaluate(T);
+      return property === 'enthalpy' ? state.cp! : state.cp! / T;
+    },
+    tolerance: BACKWARD_PRESSURE_PROPERTY_TEMPERATURE_TOLERANCE,
+    residualTolerance: 0,
+  });
+  return evaluate(temperature);
 }
 
 /** Detect region for P-H inputs. */
@@ -70,22 +150,19 @@ function detectRegionPressureProperty(
     ? minimum <= target || isClose(target, minimum)
     : withinClosedLowerBound(target, minimum, 'entropy');
   if (p >= C.P_MIN && p <= C.B23_P_MIN) {
-    if (p >= C.Pt) {
-      const endpoints = saturationEndpointsAtPressure(p);
-      if (isClose(target, endpoints.liquid[property]) || isClose(target, endpoints.vapor[property])) {
-        return Region.Region4;
-      }
+    const endpoints = p >= C.Pt ? saturationEndpointsAtPressure(p) : null;
+    if (endpoints !== null && endpoints.liquid[property] <= target && target <= endpoints.vapor[property]) {
+      return Region.Region4;
     }
-    const Tsat = saturationTemperature(p);
-    const [liquidT, vaporT] = p < C.Pt ? nativeSaturationTemperatureBracket(p) : [Tsat, Tsat];
+    const [liquidT, vaporT] = endpoints === null ? nativeSaturationTemperatureBracket(p)
+      : [endpoints.temperature, endpoints.temperature];
     const lower = region1(p, C.T_MIN)[property];
-    const boundary14 = region1(p, liquidT)[property];
-    const boundary24 = region2(p, vaporT)[property];
+    const boundary14 = endpoints?.liquid[property] ?? region1(p, liquidT)[property];
+    const boundary24 = endpoints?.vapor[property] ?? region2(p, vaporT)[property];
     const boundary25 = region2(p, C.R2_T_MAX)[property];
 
     if (aboveMinimum(lower) && target <= boundary14) return Region.Region1;
-    if (p >= C.Pt && boundary14 < target && target < boundary24) return Region.Region4;
-    if (boundary24 <= target && withinClosedUpperBound(target, boundary25)) return Region.Region2;
+    if (withinClosedLowerBound(target, boundary24, property) && withinClosedUpperBound(target, boundary25)) return Region.Region2;
     if (p <= C.R5_P_MAX && region5(p, C.R5_T_MIN)[property] < target &&
         withinClosedUpperBound(target, region5(p, C.R5_T_MAX)[property])) return Region.Region5;
   } else if (p > C.B23_P_MIN && p <= C.P_MAX) {
@@ -98,17 +175,7 @@ function detectRegionPressureProperty(
     if (p < C.Pc) {
       try {
         const endpoints = saturationEndpointsAtPressure(p);
-        // Native B23 cancellation can shift its first Region 2 float by a few ULPs.
-        const roundoff = 128 * Number.EPSILON * Math.max(1, Math.abs(target));
-        if (target !== endpoints.liquid[property] && target !== endpoints.vapor[property] &&
-            boundary32 <= target + roundoff && target < endpoints.vapor[property]) {
-          // Near P13, the Region 3 saturation span can contain a PT-owned Region 2 root.
-          const [, vaporT] = nativeSaturationTemperatureBracket(p);
-          const T = Math.max(region2T, vaporT);
-          if (detectRegionPT(p, T) === Region.Region2 && region2(p, T)[property] <= target + roundoff) return Region.Region2;
-        }
-        if (isClose(target, endpoints.liquid[property]) || isClose(target, endpoints.vapor[property]) ||
-            (endpoints.liquid[property] < target && target < endpoints.vapor[property])) {
+        if (endpoints.liquid[property] <= target && target <= endpoints.vapor[property]) {
           return Region.Region4;
         }
       } catch (error) {
@@ -117,8 +184,8 @@ function detectRegionPressureProperty(
       }
     }
 
-    if (aboveMinimum(lower) && (target <= boundary13 || isClose(target, boundary13))) return Region.Region1;
-    if (boundary32 <= target && withinClosedUpperBound(target, boundary25)) return Region.Region2;
+    if (aboveMinimum(lower) && target <= boundary13) return Region.Region1;
+    if (withinClosedLowerBound(target, boundary32, property) && withinClosedUpperBound(target, boundary25)) return Region.Region2;
     if (p <= C.R5_P_MAX && region5(p, C.R5_T_MIN)[property] < target &&
         withinClosedUpperBound(target, region5(p, C.R5_T_MAX)[property])) return Region.Region5;
     if (p < C.Pc) {

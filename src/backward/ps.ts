@@ -10,7 +10,7 @@ import { SaturationEndpointError } from '../errors.js';
 import * as C from '../constants.js';
 import { region1 } from '../regions/region1.js';
 import { region2 } from '../regions/region2.js';
-import { region3ByRhoT } from '../regions/region3.js';
+import { region3ByRhoT, region3PressureResidual } from '../regions/region3.js';
 import { region5 } from '../regions/region5.js';
 import { assertFiniteNumber, withinClosedLowerBound } from '../core/input-validation.js';
 import { assertPressurePropertyEnvelope, detectRegionPS, pressurePropertySeam } from './pressure-property-region.js';
@@ -181,15 +181,16 @@ export function r3BackwardPSInitial(p: number, s: number): { rho: number; T: num
   return { rho: 1 / v, T };
 }
 
-function solveRegion3PS(p: number, s: number, rho0: number, T0: number): BasicProperties {
-  const pScale = Math.max(1, Math.abs(p));
+function solveRegion3PS(p: number, s: number, rho0: number, T0: number, refinePressure = false): BasicProperties {
+  // Scaling the 1e-13 solver tolerance by 1e-4 resolves pressure below one ULP before PT reconstruction.
+  const pScale = Math.max(1, Math.abs(p)) * (refinePressure ? 1e-4 : 1);
   const sScale = Math.max(1, Math.abs(s));
   const [rho, T] = dampedNewton2D(([candidateRho, candidateT]) => {
     const state = region3ByRhoT(candidateRho, candidateT);
     const derivatives = helmholtzPropertyDerivatives(state, candidateRho);
     return {
       residual: [
-        (state.pressure - p) / pScale,
+        (refinePressure ? region3PressureResidual(candidateRho, candidateT, p) : state.pressure - p) / pScale,
         (state.entropy - s) / sScale,
       ],
       jacobian: [
@@ -282,8 +283,7 @@ export function solvePS(p: number, s: number): BasicProperties {
     case Region.Region3: {
       try {
         const initial = r3BackwardPSInitial(p, s);
-        const state = solveRegion3PS(p, s, initial.rho, initial.T);
-        const validated = validateBackwardState(
+        const validate = (state: BasicProperties): BasicProperties => validateBackwardState(
           state,
           [
             { label: 'pressure', expected: p },
@@ -291,9 +291,20 @@ export function solvePS(p: number, s: number): BasicProperties {
           ],
           { solverName: 'solvePS', expectedRegion: Region.Region3 },
         );
-        return saturationFailure === null
-          ? validated
-          : validateRegion3PTReconstruction(validated, 'solvePS');
+        const validated = validate(solveRegion3PS(p, s, initial.rho, initial.T));
+        // Compressibility can amplify an accepted pressure residual beyond PT's density accuracy.
+        const relativeDensityError = Math.abs(region3PressureResidual(
+          1 / validated.specificVolume, validated.temperature, p,
+        )) * validated.isothermalCompressibility!;
+        if (saturationFailure === null && relativeDensityError <= 1e-12) return validated;
+        try {
+          const refined = validate(solveRegion3PS(p, s, 1 / validated.specificVolume, validated.temperature, true));
+          validateRegion3PTReconstruction(refined, 'solvePS');
+          return refined;
+        } catch (error) {
+          if (!(error instanceof IF97Error)) throw error;
+          return saturationFailure === null ? validated : validateRegion3PTReconstruction(validated, 'solvePS');
+        }
       } catch (error) {
         if (saturationFailure !== null && error instanceof IF97Error) throw saturationFailure;
         throw error;

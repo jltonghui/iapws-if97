@@ -2,6 +2,7 @@ import * as C from '../constants.js';
 import { bracketedNewton } from '../solvers/bracketed-newton.js';
 import { dampedNewton2D } from '../solvers/damped-newton-2d.js';
 import { backwardConstraintTolerance } from '../backward/tolerances.js';
+import { nextPositiveFloat } from '../core/floating-point.js';
 import type { BasicProperties, CoefficientTable } from '../types.js';
 import { IF97Error } from '../types.js';
 import { SaturationEndpointError } from '../errors.js';
@@ -229,20 +230,18 @@ function tryRegion4HSEntropyState(h: number, s: number): BasicProperties | null 
     }
   }
 
-  const view = new DataView(new ArrayBuffer(8));
-  const nextTemperature = (T: number): number => {
-    view.setFloat64(0, T);
-    view.setBigUint64(0, view.getBigUint64(0) + 1n);
-    return view.getFloat64(0);
-  };
   // Split the EOS seam; the valid anchor defers critical-ceiling calibration until needed.
-  const intervals = [[C.Tt, C.R2_T_MIN], [nextTemperature(C.R2_T_MIN), C.Tc - 1e-4]];
+  const intervals = [[C.Tt, C.R2_T_MIN], [nextPositiveFloat(C.R2_T_MIN, 1), C.Tc - 1e-4]];
   const liquid = s <= C.R3_S_CRT;
   let numericalFailure = false;
   let criticalInterval = false;
   for (const [lower, initialUpper] of intervals) {
     try {
       const lowerValue = evaluate(lower);
+      if (Math.abs(lowerValue.residual) <= REGION4_HS_ENDPOINT_RESIDUAL_TOLERANCE) {
+        const state = finalizeRegion4HSState(h, s, lower);
+        if (state !== null) return state;
+      }
       if (s < lowerValue.liquidEntropy || s > lowerValue.vaporEntropy) {
         // Split-EOS endpoint roundoff can exclude a numerically valid root.
         if (Math.abs(lowerValue.residual) <= C.REGION4_HS_RESIDUAL_TOLERANCE) numericalFailure = true;
@@ -324,7 +323,7 @@ function tryRegion4HSEntropyState(h: number, s: number): BasicProperties | null 
         const derivative = liquid ? value.liquidDsDT : value.vaporDsDT;
         // A rounded entropy zero is still inside; retain an outside bound one float higher.
         const candidate = phaseResidual === 0
-          ? nextTemperature(temperature)
+          ? nextPositiveFloat(temperature, 1)
           : temperature - phaseResidual / derivative;
         temperature = Number.isFinite(candidate) && candidate > inside && candidate < outside
           ? candidate
@@ -364,10 +363,7 @@ function tryRegion4HSNewtonState(h: number, s: number): BasicProperties | null {
   // liquid, approximates the mean temperature of heat addition from that state —
   // close enough to land inside the dome for most inputs. It is clamped to the
   // saturation range and backed by fixed seeds spanning Tt to just below Tc.
-  const view = new DataView(new ArrayBuffer(8));
-  view.setFloat64(0, C.R2_T_MIN);
-  view.setBigUint64(0, view.getBigUint64(0) + 1n);
-  const seeds = [h / s, 300, 400, 500, 580, 630, 645, view.getFloat64(0)];
+  const seeds = [h / s, 300, 400, 500, 580, 630, 645, nextPositiveFloat(C.R2_T_MIN, 1)];
   const tried = new Set<number>();
   const hScale = Math.max(1, Math.abs(h));
   const sScale = Math.max(1, Math.abs(s));
@@ -436,13 +432,12 @@ function finalizeRegion4HSState(
     s,
   );
   const normalizedQualityFromEnthalpy = normalizeEndpointQuality(qualityFromEnthalpy);
-  const normalizedQualityFromEntropy = normalizeEndpointQuality(qualityFromEntropy);
 
-  if (!isAdmissibleQuality(normalizedQualityFromEnthalpy) || !isAdmissibleQuality(normalizedQualityFromEntropy)) {
+  if (!isAdmissibleQuality(qualityFromEnthalpy) || !isAdmissibleQuality(qualityFromEntropy)) {
     return null;
   }
 
-  if (Math.abs(normalizedQualityFromEnthalpy - normalizedQualityFromEntropy) > REGION4_QUALITY_TOLERANCE) {
+  if (Math.abs(qualityFromEnthalpy - qualityFromEntropy) > REGION4_QUALITY_TOLERANCE) {
     return null;
   }
 
@@ -458,11 +453,33 @@ function finalizeRegion4HSState(
     return null;
   }
 
-  const exactEndpointQuality = endpointQuality(qualityFromEnthalpy, qualityFromEntropy);
+  let exactEndpointQuality = endpointQuality(qualityFromEnthalpy, qualityFromEntropy);
+  if (exactEndpointQuality !== null) {
+    const endpoint = exactEndpointQuality === 0 ? endpoints.liquid : endpoints.vapor;
+    if (Math.abs(endpoint.enthalpy - h) > backwardConstraintTolerance('enthalpy', h) ||
+        Math.abs(endpoint.entropy - s) > backwardConstraintTolerance('entropy', s)) {
+      if (qualityFromEnthalpy < 0 || qualityFromEnthalpy > 1 ||
+          qualityFromEntropy < 0 || qualityFromEntropy > 1) return null;
+      exactEndpointQuality = null;
+    }
+  }
   const state = mixSaturationState(
     endpoints,
     exactEndpointQuality ?? normalizedQualityFromEnthalpy,
   );
+  // A quality clamp must not turn a single-phase input into an approximate endpoint.
+  if (qualityFromEnthalpy < 0 || qualityFromEnthalpy > 1 ||
+      qualityFromEntropy < 0 || qualityFromEntropy > 1 || state.quality === 0 || state.quality === 1) {
+    // Preserve the existing endpoint quality resolution in both reconstructed properties.
+    const enthalpyTolerance = Math.max(1e-9,
+      (endpoints.vapor.enthalpy - endpoints.liquid.enthalpy) * REGION4_ENDPOINT_QUALITY_SNAP_TOLERANCE);
+    const entropyTolerance = Math.max(1e-12,
+      (endpoints.vapor.entropy - endpoints.liquid.entropy) * REGION4_ENDPOINT_QUALITY_SNAP_TOLERANCE);
+    if ((state.quality !== 0 && state.quality !== 1) ||
+        Math.abs(state.enthalpy - h) > enthalpyTolerance || Math.abs(state.entropy - s) > entropyTolerance) {
+      return null;
+    }
+  }
   if (Math.abs(state.enthalpy - h) > backwardConstraintTolerance('enthalpy', h) ||
       Math.abs(state.entropy - s) > backwardConstraintTolerance('entropy', s)) {
     return null;
@@ -518,17 +535,33 @@ function exactEndpointHSState(
         undefined,
         { tolerance: Number.EPSILON, derivative: derivativeAt },
       );
-      const refined = saturationEndpointsAtTemperature(root);
-      const endpoint = quality === 0 ? refined.liquid : refined.vapor;
-      if (endpoint.enthalpy !== h || endpoint.entropy !== s) return null;
-      assertRegion4StateAllowed(refined.pressure, refined.temperature, 'Region4HS');
-      return mixSaturationState(refined, quality);
+      let below = root;
+      let above = root;
+      // EOS cancellation can reverse the enthalpy sign before the exact endpoint float.
+      for (let neighbor = 0; neighbor < 8; neighbor += 1) {
+        for (const candidate of neighbor === 0 ? [root] : [below, above]) {
+          if (candidate < C.Tt || candidate > REGION4_HS_NEWTON_UPPER ||
+              (candidate <= C.R2_T_MIN) !== (initialTemperature <= C.R2_T_MIN)) continue;
+          const refined = saturationEndpointsAtTemperature(candidate);
+          const endpoint = quality === 0 ? refined.liquid : refined.vapor;
+          if (endpoint.enthalpy !== h || endpoint.entropy !== s) continue;
+          assertRegion4StateAllowed(refined.pressure, refined.temperature, 'Region4HS');
+          return mixSaturationState(refined, quality);
+        }
+        below = nextPositiveFloat(below, -1);
+        above = nextPositiveFloat(above, 1);
+      }
+      return null;
     }
     const value = valueAt(temperature);
     const derivative = residual === 0
       ? quality === 0 ? value.liquidDsDT : value.vaporDsDT
       : quality === 0 ? value.liquidDhDT : value.vaporDhDT;
-    const candidate = temperature - (residual === 0 ? state.entropy - s : residual) / derivative;
+    const correction = (residual === 0 ? state.entropy - s : residual) / derivative;
+    const newtonTemperature = temperature - correction;
+    const candidate = newtonTemperature === temperature && correction !== 0
+      ? nextPositiveFloat(temperature, correction > 0 ? -1 : 1)
+      : newtonTemperature;
     if (!Number.isFinite(candidate) || candidate === temperature || candidate < C.Tt ||
         candidate > REGION4_HS_NEWTON_UPPER ||
         (candidate <= C.R2_T_MIN) !== (initialTemperature <= C.R2_T_MIN)) return null;

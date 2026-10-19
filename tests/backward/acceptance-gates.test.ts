@@ -4,14 +4,14 @@ import { solveHS, solvePH, solvePS, solvePT, solveTH, solveTS } from '../../src/
 import { validateBackwardState } from '../../src/backward/solution-validation.js';
 
 const propertyCases = [
-  { label: 'enthalpy', expected: 3000, tolerance: 0.003 },
-  { label: 'entropy', expected: 7, tolerance: 7e-6 },
-  { label: 'enthalpy', expected: 0.5, tolerance: 1e-6 },
-  { label: 'entropy', expected: 0.5, tolerance: 1e-6 },
-  { label: 'enthalpy', expected: 0, tolerance: 1e-6 },
-  { label: 'entropy', expected: 0, tolerance: 1e-6 },
-  { label: 'enthalpy', expected: -0.5, tolerance: 1e-6 },
-  { label: 'entropy', expected: -0.5, tolerance: 1e-6 },
+  { label: 'enthalpy', expected: 3000, tolerance: 3e-6 },
+  { label: 'entropy', expected: 7, tolerance: 7e-9 },
+  { label: 'enthalpy', expected: 0.5, tolerance: 1e-9 },
+  { label: 'entropy', expected: 0.5, tolerance: 1e-9 },
+  { label: 'enthalpy', expected: 0, tolerance: 1e-9 },
+  { label: 'entropy', expected: 0, tolerance: 1e-9 },
+  { label: 'enthalpy', expected: -0.5, tolerance: 1e-9 },
+  { label: 'entropy', expected: -0.5, tolerance: 1e-9 },
 ] as const;
 
 describe('backward acceptance gates', () => {
@@ -35,7 +35,7 @@ describe('backward acceptance gates', () => {
 
   it.each(['enthalpy', 'entropy'] as const)('includes the exact $label acceptance boundary', (label) => {
     for (const direction of [-1, 1]) {
-      const candidate = { ...state, [label]: direction * 1e-6 };
+      const candidate = { ...state, [label]: direction * 1e-9 };
       expect(validateBackwardState(candidate, [{ label, expected: 0 }], options)).toBe(candidate);
     }
   });

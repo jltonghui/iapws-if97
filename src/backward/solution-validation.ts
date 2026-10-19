@@ -1,6 +1,7 @@
 import * as C from '../constants.js';
 import { detectRegionPT, nativeB23TemperatureBracket, nativeSaturationTemperatureBracket } from '../core/region-detector.js';
 import { solveRegion3PTBasic } from '../core/region3-pt.js';
+import { nextPositiveFloat } from '../core/floating-point.js';
 import type { FormulationSeamResolution } from '../core/formulation-seams.js';
 import { region2 } from '../regions/region2.js';
 import { region1 } from '../regions/region1.js';
@@ -8,7 +9,7 @@ import { saturationPressure } from '../regions/region4.js';
 import { region5 } from '../regions/region5.js';
 import type { BasicProperties } from '../types.js';
 import { IF97Error, Region } from '../types.js';
-import { RegionMismatchError } from '../errors.js';
+import { NumericalStateError, RegionMismatchError } from '../errors.js';
 import {
   backwardConstraintTolerance,
   region4SaturationPressureTolerance,
@@ -113,18 +114,28 @@ function normalizeB23State(state: BasicProperties): BasicProperties {
 function normalizeRegion3LowerState(state: BasicProperties): BasicProperties {
   if (state.region !== Region.Region3 || !(state.temperature <= C.R2_T_MIN) ||
       C.R2_T_MIN - state.temperature > boundaryTolerance(state.temperature, C.R2_T_MIN)) return state;
-  const view = new DataView(new ArrayBuffer(8));
-  view.setFloat64(0, C.R2_T_MIN);
-  view.setBigUint64(0, view.getBigUint64(0) + 1n);
-  return solveRegion3PTBasic(state.pressure, view.getFloat64(0));
+  return solveRegion3PTBasic(state.pressure, nextPositiveFloat(C.R2_T_MIN, 1));
 }
 
-function normalizeSaturationState(state: BasicProperties): BasicProperties {
+function normalizeSaturationState(
+  state: BasicProperties,
+  constraints: readonly BackwardConstraint[],
+  solverName: string,
+): BasicProperties {
   if ((state.region !== Region.Region1 && state.region !== Region.Region2) ||
       state.pressure > saturationPressure(C.R2_T_MIN) ||
       state.temperature < C.T_MIN || state.temperature > C.R2_T_MIN ||
       detectRegionPT(state.pressure, state.temperature) === state.region) {
     return state;
+  }
+  if (!constraints.some(({ label }) => label === 'pressure')) {
+    const psat = saturationPressure(state.temperature);
+    const pressure = state.region === Region.Region1 ? psat : nextPositiveFloat(psat, -1);
+    const projected = state.region === Region.Region1
+      ? region1(pressure, state.temperature)
+      : region2(pressure, state.temperature);
+    if (Math.abs(pressure - state.pressure) <= backwardConstraintTolerance('pressure', psat) &&
+        backwardCandidateError(projected, constraints, { solverName }) === null) return projected;
   }
   const [liquidT, vaporT] = nativeSaturationTemperatureBracket(state.pressure);
   const temperature = state.region === Region.Region1 ? liquidT : vaporT;
@@ -136,68 +147,92 @@ function normalizeSaturationState(state: BasicProperties): BasicProperties {
     : region2(state.pressure, temperature);
 }
 
-function validateBasicEnvelope(state: BasicProperties, solverName: string): void {
+function basicEnvelopeError(state: BasicProperties, solverName: string): IF97Error | null {
   if (!Number.isFinite(state.pressure) || !Number.isFinite(state.temperature) ||
-      !Number.isFinite(state.specificVolume) || state.specificVolume <= 0) {
-    throw new IF97Error(`${solverName} produced an invalid thermodynamic state`);
+      !Number.isFinite(state.specificVolume)) {
+    return new NumericalStateError(`${solverName} produced an invalid thermodynamic state`);
   }
+  if (state.specificVolume <= 0) return new IF97Error(`${solverName} produced an invalid thermodynamic state`);
 
   if (state.pressure < C.P_MIN || state.pressure > C.P_MAX ||
       state.temperature < C.T_MIN || state.temperature > C.T_MAX) {
-    throw new IF97Error(`${solverName} produced a state outside the IF97 PT envelope`);
+    return new IF97Error(`${solverName} produced a state outside the IF97 PT envelope`);
   }
 
-  if (state.region === Region.Region3 &&
-      ![state.cp, state.cv, state.isothermalCompressibility, state.speedOfSound]
-        .every((value) => value !== null && Number.isFinite(value) && value > 0)) {
-    throw new IF97Error(
-      `${solverName}: Region 3 numerical inconsistency: computed EOS state at p=${state.pressure} MPa, T=${state.temperature} K failed stability checks`,
-    );
+  if (state.region === Region.Region3) {
+    const stability = [state.cp, state.cv, state.isothermalCompressibility, state.speedOfSound];
+    if (!stability.every((value) => value !== null && Number.isFinite(value) && value > 0)) {
+      const ErrorType = stability.some((value) => value === null || !Number.isFinite(value))
+        ? NumericalStateError : IF97Error;
+      return new ErrorType(
+        `${solverName}: Region 3 numerical inconsistency: computed EOS state at p=${state.pressure} MPa, T=${state.temperature} K failed stability checks`,
+      );
+    }
   }
+  return null;
 }
 
-function validateRegionConsistency(
+function regionConsistencyError(
   state: BasicProperties,
   solverName: string,
   expectedRegion?: Region,
-): void {
+): IF97Error | null {
   if (expectedRegion !== undefined && state.region !== expectedRegion) {
-    throw new IF97Error(`${solverName} returned Region ${state.region}, expected Region ${expectedRegion}`);
+    return new IF97Error(`${solverName} returned Region ${state.region}, expected Region ${expectedRegion}`);
   }
 
   if (state.region === Region.Region4) {
     if (state.quality === null || !Number.isFinite(state.quality) || state.quality < 0 || state.quality > 1) {
-      throw new IF97Error(`${solverName} produced an invalid Region 4 quality`);
+      return new IF97Error(`${solverName} produced an invalid Region 4 quality`);
     }
 
     const psat = saturationPressure(state.temperature);
     const pTolerance = region4SaturationPressureTolerance(state.pressure);
     if (Math.abs(psat - state.pressure) > pTolerance) {
-      throw new IF97Error(`${solverName} produced a Region 4 state off the saturation curve`);
+      return new IF97Error(`${solverName} produced a Region 4 state off the saturation curve`);
     }
-    return;
+    return null;
   }
 
   const detectedRegion = detectRegionPT(state.pressure, state.temperature);
   if (detectedRegion !== state.region) {
-    throw new RegionMismatchError(solverName, detectedRegion, state.region);
+    return new RegionMismatchError(solverName, detectedRegion, state.region);
   }
+  return null;
 }
 
-function validateConstraints(
+function constraintError(
   state: BasicProperties,
   constraints: readonly BackwardConstraint[],
   solverName: string,
-): void {
+): IF97Error | null {
   for (const constraint of constraints) {
     const actual = propertyValue(state, constraint.label);
     const tolerance = constraint.tolerance ?? backwardConstraintTolerance(constraint.label, constraint.expected);
-    if (Math.abs(actual - constraint.expected) > tolerance) {
-      throw new IF97Error(
+    if (!Number.isFinite(actual)) {
+      return new NumericalStateError(
+        `${solverName} failed to match ${constraint.label}: expected ${constraint.expected}, got ${actual}`,
+      );
+    }
+    if (!Number.isFinite(constraint.expected) || !Number.isFinite(tolerance) ||
+        tolerance < 0 || Math.abs(actual - constraint.expected) > tolerance) {
+      return new IF97Error(
         `${solverName} failed to match ${constraint.label}: expected ${constraint.expected}, got ${actual}`,
       );
     }
   }
+  return null;
+}
+
+/** Inspect a candidate without moving it across a formulation or domain boundary. */
+export function backwardCandidateError(
+  state: BasicProperties,
+  constraints: readonly BackwardConstraint[],
+  options: BackwardValidationOptions,
+): IF97Error | null {
+  return basicEnvelopeError(state, options.solverName) ??
+    constraintError(state, constraints, options.solverName) ??
+    regionConsistencyError(state, options.solverName, options.expectedRegion);
 }
 
 export function validateBackwardState(
@@ -214,14 +249,16 @@ export function validateBackwardState(
       ? { ...constraint, tolerance: seam.budgets[constraint.label] }
       : constraint)
     : constraints;
-  validateConstraints(state, checkedConstraints, options.solverName);
+  const initialError = constraintError(state, checkedConstraints, options.solverName);
+  if (initialError !== null) throw initialError;
   const computed = normalizeComputedPT(state);
   const normalized = constraints.some(({ label }) => label === 'temperature')
     ? computed
-    : normalizeSaturationState(normalizeB23State(normalizeRegion3LowerState(computed)));
-  validateBasicEnvelope(normalized, options.solverName);
-  validateRegionConsistency(normalized, options.solverName, options.expectedRegion);
-  validateConstraints(normalized, checkedConstraints, options.solverName);
+    : normalizeSaturationState(
+      normalizeB23State(normalizeRegion3LowerState(computed)), checkedConstraints, options.solverName,
+    );
+  const error = backwardCandidateError(normalized, checkedConstraints, options);
+  if (error !== null) throw error;
   return normalized;
 }
 

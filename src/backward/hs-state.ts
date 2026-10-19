@@ -1,6 +1,7 @@
 /** Backward H-S state construction within a selected region or formulation seam. */
 import type { BasicProperties, CoefficientTable } from '../types.js';
 import { Region, IF97Error } from '../types.js';
+import { NumericalStateError } from '../errors.js';
 import * as C from '../constants.js';
 import { region1 } from '../regions/region1.js';
 import { region2 } from '../regions/region2.js';
@@ -10,12 +11,15 @@ import type { FormulationSeamResolution } from '../core/formulation-seams.js';
 import { solveRegion3PTBasic } from '../core/region3-pt.js';
 import { dampedNewton2D } from '../solvers/damped-newton-2d.js';
 import { r1BackwardT, r2BackwardT, r3BackwardPHInitial } from './ph.js';
-import { validateBackwardState, validateRegion3PTReconstruction } from './solution-validation.js';
+import { backwardCandidateError, validateBackwardState, validateRegion3PTReconstruction } from './solution-validation.js';
 import {
   gibbsPropertyDerivatives,
   helmholtzPropertyDerivatives,
 } from '../core/thermodynamic-derivatives.js';
 import { tryRegion4HSState } from '../saturation/region4-hs.js';
+import { BACKWARD_HS_NEWTON_TOLERANCE, backwardConstraintTolerance } from './tolerances.js';
+import { resolveBackwardCandidates } from './candidate-resolution.js';
+import { nextPositiveFloat } from '../core/floating-point.js';
 
 // ─── Backward Polynomial Evaluator ─────────────────────────────────────────
 
@@ -194,7 +198,7 @@ function solveGibbsHS(
     };
   }, initial, {
     // Entropy convergence must also resolve pressure at the P_MIN boundary.
-    tolerance: 1e-12,
+    tolerance: BACKWARD_HS_NEWTON_TOLERANCE,
     isValid: ([candidateP, candidateT]) => candidateP > 0 && candidateT > 0,
   });
   return stateAt(p, T);
@@ -221,7 +225,7 @@ function solveRegion3HS(h: number, s: number, rho0: number, T0: number): BasicPr
     // Region 3 is nearly incompressible, so a residual the default would accept
     // still lands p far enough outside [P_MIN, P_MAX] to fail envelope
     // validation. Covered by the p=100 MPa cases in newton-regressions.test.ts.
-    tolerance: 1e-12,
+    tolerance: BACKWARD_HS_NEWTON_TOLERANCE,
     isValid: ([candidateRho, candidateT]) => candidateRho > 0 && candidateT > 0,
   });
   return region3ByRhoT(rho, T);
@@ -229,12 +233,24 @@ function solveRegion3HS(h: number, s: number, rho0: number, T0: number): BasicPr
 
 // ─── Main HS Solver ─────────────────────────────────────────────────────────
 
-export function solveHSInRegion(h: number, s: number, region: Region | -1, seamInitial?: BasicProperties): BasicProperties {
+export function solveHSInRegion(
+  h: number,
+  s: number,
+  region: Region | -1,
+  seamInitial?: BasicProperties,
+  validate = true,
+): BasicProperties {
+  // Re-evaluating a converged Region 3 seed can round pressure outside its closed boundary.
+  if (!validate && seamInitial?.region === region &&
+      Math.abs(seamInitial.enthalpy - h) <= BACKWARD_HS_NEWTON_TOLERANCE * Math.max(1, Math.abs(h)) &&
+      Math.abs(seamInitial.entropy - s) <= BACKWARD_HS_NEWTON_TOLERANCE * Math.max(1, Math.abs(s))) {
+    return seamInitial;
+  }
   switch (region) {
     case Region.Region1: {
       const P0 = seamInitial?.pressure ?? r1Phs(h, s);
       const state = solveGibbsHS(h, s, [P0, seamInitial?.temperature ?? r1BackwardT(P0, h)], region1);
-      return validateBackwardState(
+      return !validate ? state : validateBackwardState(
         state,
         [
           { label: 'enthalpy', expected: h },
@@ -246,7 +262,7 @@ export function solveHSInRegion(h: number, s: number, region: Region | -1, seamI
     case Region.Region2: {
       const P0 = seamInitial?.pressure ?? Math.max(C.P_MIN, Math.min(C.P_MAX, r2Phs(h, s)));
       const state = solveGibbsHS(h, s, [P0, seamInitial?.temperature ?? r2BackwardT(P0, h)], region2);
-      return validateBackwardState(
+      return !validate ? state : validateBackwardState(
         state,
         [
           { label: 'enthalpy', expected: h },
@@ -261,6 +277,28 @@ export function solveHSInRegion(h: number, s: number, region: Region | -1, seamI
         ? r3BackwardPHInitial(P0, h)
         : { rho: 1 / seamInitial.specificVolume, T: seamInitial.temperature };
       const state = solveRegion3HS(h, s, initial.rho, initial.T);
+      if (!validate) {
+        if (state.pressure > C.P_MAX &&
+            state.pressure - C.P_MAX <= backwardConstraintTolerance('pressure', C.P_MAX)) {
+          const constraints = [
+            { label: 'enthalpy' as const, expected: h, tolerance: 1e-9 },
+            { label: 'entropy' as const, expected: s, tolerance: 1e-12 },
+          ];
+          const options = { solverName: 'solveHS', expectedRegion: Region.Region3 };
+          // Inspect the raw EOS before reconstructing only its closed pressure boundary.
+          const error = backwardCandidateError({ ...state, pressure: C.P_MAX }, constraints, options);
+          if (error instanceof NumericalStateError) throw error;
+          if (error === null) {
+            const projected = solveRegion3PTBasic(C.P_MAX, state.temperature);
+            if (backwardCandidateError(projected, constraints, options) === null) return projected;
+          }
+        }
+        if (state.temperature >= C.Tc || backwardCandidateError(state, [
+          { label: 'enthalpy', expected: h },
+          { label: 'entropy', expected: s },
+        ], { solverName: 'solveHS', expectedRegion: Region.Region3 }) !== null) return state;
+        return solveRegion3PTBasic(state.pressure, state.temperature);
+      }
       const validated = validateBackwardState(
         state,
         [
@@ -277,7 +315,7 @@ export function solveHSInRegion(h: number, s: number, region: Region | -1, seamI
       if (state === null) {
         throw new IF97Error('solveHS identified Region 4 but failed to construct a valid saturation state');
       }
-      return validateBackwardState(
+      return !validate ? state : validateBackwardState(
         state,
         [
           { label: 'enthalpy', expected: h },
@@ -288,7 +326,7 @@ export function solveHSInRegion(h: number, s: number, region: Region | -1, seamI
     }
     case Region.Region5: {
       const state = solveGibbsHS(h, s, [seamInitial?.pressure ?? 1, seamInitial?.temperature ?? 1400], region5);
-      return validateBackwardState(
+      return !validate ? state : validateBackwardState(
         state,
         [
           { label: 'enthalpy', expected: h },
@@ -303,56 +341,29 @@ export function solveHSInRegion(h: number, s: number, region: Region | -1, seamI
 }
 
 /** Resolve one proven seam identically for the HS solver and detector. */
-export function solveHSSeam(h: number, s: number, seam: FormulationSeamResolution): BasicProperties {
-  try {
-    const saturated = tryRegion4HSState(h, s);
-    if (saturated !== null) {
-      validateBackwardState(saturated, [
-        { label: 'enthalpy', expected: h },
-        { label: 'entropy', expected: s },
-      ], { solverName: 'solveHS', expectedRegion: Region.Region4 });
-      return saturated;
+export function solveHSSeam(h: number, s: number, seam: FormulationSeamResolution): BasicProperties | null {
+  const constraints = [
+    { label: 'enthalpy' as const, expected: h },
+    { label: 'entropy' as const, expected: s },
+  ];
+  const options = { solverName: 'solveHS', seam };
+  const adjacent = seam.pair.lower.region === seam.state.region ? seam.pair.upper : seam.pair.lower;
+  const solveRegion = (region: Region, initial?: BasicProperties): BasicProperties => {
+    if (initial?.region === Region.Region5 && initial.temperature === C.R5_T_MIN) {
+      initial = region5(initial.pressure, nextPositiveFloat(C.R5_T_MIN, 1));
+    } else if (initial?.region === Region.Region3 && initial.temperature === C.R2_T_MIN) {
+      initial = solveRegion3PTBasic(initial.pressure, nextPositiveFloat(C.R2_T_MIN, 1));
+    } else if (initial?.region === Region.Region2 && seam.pair.seam === '23') {
+      initial = region2(initial.pressure, nextPositiveFloat(initial.temperature, 1));
     }
-  } catch (error) {
-    if (!(error instanceof IF97Error)) throw error;
-  }
-  if (seam.kind === 'canonical') {
-    return validateBackwardState(seam.state, [
-      { label: 'enthalpy', expected: h },
-      { label: 'entropy', expected: s },
-    ], { solverName: 'solveHS', expectedRegion: seam.state.region, seam });
-  }
-  const solveRegion = (initial: BasicProperties): BasicProperties => {
-    // A converged Region 5 endpoint at the seam still belongs to Region 2.
-    if (initial.region === Region.Region5 && initial.temperature === C.R5_T_MIN) {
-      initial = region5(initial.pressure, C.R5_T_MIN + Number.EPSILON * C.R5_T_MIN);
-    }
-    const state = solveHSInRegion(h, s, initial.region, initial);
-    const reconstructed = state.region === Region.Region3
-      ? solveRegion3PTBasic(state.pressure, state.temperature)
-      : (state.region === Region.Region1 ? region1 : state.region === Region.Region2 ? region2 : region5)(
-        state.pressure, state.temperature,
-      );
-    if (seam.kind === 'gap' &&
-        (Math.abs(reconstructed.enthalpy - h) > 1e-9 || Math.abs(reconstructed.entropy - s) > 1e-12)) {
-      throw new IF97Error('solveHS could not recover an exact state inside the formulation seam gap');
-    }
-    return reconstructed;
+    return solveHSInRegion(h, s, region, initial, false);
   };
-  try {
-    return solveRegion(seam.state);
-  } catch (error) {
-    if (!(error instanceof IF97Error)) throw error;
-    const adjacent = seam.pair.lower.region === seam.state.region ? seam.pair.upper : seam.pair.lower;
-    try {
-      return solveRegion(adjacent);
-    } catch (alternateError) {
-      if (!(alternateError instanceof IF97Error)) throw alternateError;
-      if (seam.kind !== 'gap') throw error;
-      return validateBackwardState(seam.state, [
-        { label: 'enthalpy', expected: h },
-        { label: 'entropy', expected: s },
-      ], { solverName: 'solveHS', expectedRegion: seam.state.region, seam });
-    }
-  }
+  return resolveBackwardCandidates([
+    () => tryRegion4HSState(h, s),
+    () => seam.state.enthalpy === h && seam.state.entropy === s ? seam.state : null,
+    () => solveRegion(seam.state.region),
+    () => solveRegion(adjacent.region),
+    () => solveRegion(seam.state.region, seam.state),
+    () => solveRegion(adjacent.region, adjacent),
+  ], constraints, options);
 }

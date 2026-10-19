@@ -2,6 +2,8 @@ import { IF97Error, type Region } from './types.js';
 
 export class SaturationEndpointError extends IF97Error {}
 
+export class NumericalStateError extends IF97Error {}
+
 export class RegionMismatchError extends IF97Error {
   constructor(
     public readonly solverName: string,

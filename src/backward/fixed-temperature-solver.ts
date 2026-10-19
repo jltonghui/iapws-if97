@@ -9,6 +9,7 @@ import { IF97Error, Region } from '../types.js';
 import { region3ByRhoT } from '../regions/region3.js';
 import { bracketedNewton } from '../solvers/bracketed-newton.js';
 import { gibbsPropertyDerivatives, helmholtzPropertyDerivatives } from '../core/thermodynamic-derivatives.js';
+import { fixedTemperatureRootTolerance } from './tolerances.js';
 
 /** Property being inverted against pressure at fixed temperature. */
 export type FixedTemperatureProperty = 'enthalpy' | 'entropy';
@@ -77,7 +78,7 @@ export function solveFixedTemperaturePressure(
     return cachedState;
   };
 
-  const rootTolerance = property === 'enthalpy' ? 1e-9 : 1e-12;
+  const rootTolerance = fixedTemperatureRootTolerance(property);
   if (includeLower && Math.abs(propertyValue(lowerState, property) - target) <= rootTolerance) return lowerState;
   if (includeUpper && Math.abs(propertyValue(upperState, property) - target) <= rootTolerance) return upperState;
   // Resolve open endpoints below their matching tolerance instead of snapping to them.

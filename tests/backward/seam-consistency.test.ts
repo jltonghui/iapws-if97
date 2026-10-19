@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   AmbiguousStateError, IF97Error, Region, solve, solveBasic,
-  solveHS, solvePH, solvePS, solvePT, solveTH, solveTS,
+  solveHS, solvePH, solvePS, solvePT, solvePx, solveTH, solveTS,
   type BasicProperties, type SolveInput,
 } from '../../src/index.js';
 import {
@@ -43,18 +43,20 @@ function expectLocalResidual(
 }
 
 describe('formulation seam consistency', () => {
-  it.each(['PH', 'PS'] as const)('preserves the saturated vapor endpoint at the 623.15 K corner in %s', (mode) => {
+  it.each(['PH', 'PS'] as const)('preserves the single-phase root outside the actual saturation span at the 623.15 K corner in %s', (mode) => {
     const forward = solvePT(16.52916425260358, 623.15);
     expect(forward.region).toBe(Region.Region2);
+    const property = mode === 'PH' ? 'enthalpy' : 'entropy';
+    expect(forward[property]).toBeGreaterThan(solvePx(forward.pressure, 1)[property]);
     const detected = mode === 'PH'
       ? detectRegionPH(forward.pressure, forward.enthalpy)
       : detectRegionPS(forward.pressure, forward.entropy);
-    expect(detected).toBe(Region.Region4);
+    expect(detected).toBe(Region.Region2);
     const state = mode === 'PH'
       ? solvePH(forward.pressure, forward.enthalpy)
       : solvePS(forward.pressure, forward.entropy);
-    expect(state.region).toBe(Region.Region4);
-    expect(state.quality).toBe(1);
+    expect(state.region).toBe(Region.Region2);
+    expect(state.quality).toBeNull();
     expect(state.pressure).toBe(forward.pressure);
     if (mode === 'PH') expect(Math.abs(state.enthalpy - forward.enthalpy)).toBeLessThan(1e-7);
     else expect(Math.abs(state.entropy - forward.entropy)).toBeLessThan(1e-10);
@@ -111,6 +113,17 @@ describe('formulation seam consistency', () => {
     expect(Math.abs(state.temperature - boundary23_P_to_T(30))).toBeLessThan(1e-8);
     expect(state.enthalpy).not.toBe(2611.8);
     expect(Math.abs(state.enthalpy - 2611.8)).toBeLessThan(0.122);
+    expectEOS(state);
+  });
+
+  it.each([
+    { mode: 'TH', T: 839.9821843259036, target: 2760.7034989239537, p: 86.82551052116888 },
+    { mode: 'TS', T: 838.2430173136294, target: 5.0762374989405705, p: 85.88121642268575 },
+  ] as const)('preserves Region 3 ownership at the reported B23 $mode overlap endpoint', ({ mode, T, target, p }) => {
+    const state = mode === 'TH' ? solveTH(T, target) : solveTS(T, target);
+    expect(state.region).toBe(Region.Region3);
+    expect(state.pressure).toBeCloseTo(p, 8);
+    expect(mode === 'TH' ? detectRegionTH(T, target) : detectRegionTS(T, target)).toBe(Region.Region3);
     expectEOS(state);
   });
 

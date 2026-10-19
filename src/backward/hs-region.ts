@@ -14,6 +14,7 @@ import { IF97Error, OutOfRangeError, Region } from '../types.js';
 import { bracketedNewton } from '../solvers/bracketed-newton.js';
 import { solveRegion3PTBasic } from '../core/region3-pt.js';
 import { findHSSeam } from '../core/formulation-seams.js';
+import { withinClosedLowerBound } from '../core/input-validation.js';
 
 /** Check approximate equality with relative tolerance. */
 function isClose(a: number, b: number): boolean {
@@ -29,9 +30,9 @@ function isClose(a: number, b: number): boolean {
  */
 export function h1Sat(s: number): number {
   const TABLE: CoefficientTable = [
-    [0,14,0.332171191705237],[0,36,6.11217706323497e-4],[1,3,-8.82092478906822],
+    [0,14,0.332171191705237],[0,36,6.11217706323496e-4],[1,3,-8.82092478906822],
     [1,16,-0.45562819254325],[2,0,-2.63483840850452e-5],[2,5,-22.3949661148062],
-    [3,4,-4.28398660164013],[3,36,-0.616679338856916],[4,4,-14.68230311044],
+    [3,4,-4.28398660164013],[3,36,-0.616679338856916],[4,4,-14.6823031104040],
     [4,16,284.523138727299],[4,24,-113.398503195444],[5,18,1156.71380760859],
     [5,24,395.551267359325],[7,1,-1.54891257229285],[8,4,19.4486637751291],
     [12,2,-3.57915139457043],[12,4,-3.35369414148819],[14,1,-0.66442679633246],
@@ -117,7 +118,7 @@ export function h3aSat(s: number): number {
  */
 export function h2abSat(s: number): number {
   const TABLE: CoefficientTable = [
-    [1,8,-524.581170928788],[1,24,-9269471.88142218],[2,4,-237.385107491666],
+    [1,8,-524.581170928788],[1,24,-9269472.18142218],[2,4,-237.385107491666],
     [2,32,2.10770155812776e10],[4,1,-23.9494562010986],[4,2,221.802480294197],
     [7,7,-5104725.33393438],[8,5,1249813.96109147],[8,12,2.00008436996201e9],
     [10,1,-815.158509791035],[12,0,-157.612685637523],[12,7,-1.14200422332791e10],
@@ -577,7 +578,7 @@ export function classifyRegionHS(h: number, s: number): Region | -1 {
       }
     }
   }
-  if (s >= C.S_MIN && s < HS_TRIPLE_LIQUID.entropy) {
+  if (withinClosedLowerBound(s, C.S_MIN, 'entropy') && s < HS_TRIPLE_LIQUID.entropy) {
     const hmax = h1UpperBoundAtPmax(s);
     if (s < HS_R1_PMIN_TMIN.entropy) {
       const lower = hsBoundaryAtEntropy(s, C.P_MIN, C.P_MAX, false, (p) => region1(p, C.T_MIN));
@@ -588,7 +589,7 @@ export function classifyRegionHS(h: number, s: number): Region | -1 {
     if (h > hmax && !isClose(h, hmax)) {
       throw new OutOfRangeError(`Enthalpy upper envelope at s=${s}`, h, C.H_MIN, hmax);
     }
-    return h >= C.H_MIN && (h <= hmax || isClose(h, hmax)) ? Region.Region1 : -1;
+    return withinClosedLowerBound(h, C.H_MIN, 'enthalpy') && (h <= hmax || isClose(h, hmax)) ? Region.Region1 : -1;
   }
 
   if (s >= HS_TRIPLE_LIQUID.entropy && s <= HS_TRIPLE_VAPOR.entropy &&

@@ -5,6 +5,7 @@ import type { FormulationSeamResolution } from '../core/formulation-seams.js';
 import { region2 } from '../regions/region2.js';
 import { region1 } from '../regions/region1.js';
 import { saturationPressure } from '../regions/region4.js';
+import { region5 } from '../regions/region5.js';
 import type { BasicProperties } from '../types.js';
 import { IF97Error, Region } from '../types.js';
 import { RegionMismatchError } from '../errors.js';
@@ -57,6 +58,8 @@ function snapDownFromAbove(value: number, boundary: number): number {
 }
 
 function normalizeComputedPT(state: BasicProperties): BasicProperties {
+  if (state.region === Region.Region4) return state;
+
   let pressure = state.pressure < C.P_MIN &&
       C.P_MIN - state.pressure <= backwardConstraintTolerance('pressure', C.P_MIN)
     ? C.P_MIN
@@ -74,21 +77,30 @@ function normalizeComputedPT(state: BasicProperties): BasicProperties {
   }
   temperature = snapDownFromAbove(temperature, C.T_MAX);
 
-  return pressure === state.pressure && temperature === state.temperature
-    ? state
-    : { ...state, pressure, temperature };
+  if (pressure === state.pressure && temperature === state.temperature) return state;
+
+  switch (state.region) {
+    case Region.Region1: return region1(pressure, temperature);
+    case Region.Region2: return region2(pressure, temperature);
+    case Region.Region3: return solveRegion3PTBasic(pressure, temperature);
+    case Region.Region5: return region5(pressure, temperature);
+  }
 }
 
 function normalizeB23State(state: BasicProperties): BasicProperties {
   if ((state.region !== Region.Region2 && state.region !== Region.Region3) ||
       state.pressure <= C.B23_P_MIN || state.pressure > C.P_MAX ||
-      state.temperature <= C.R2_T_MIN || state.temperature >= C.B23_T_MAX ||
+      (state.temperature <= C.R2_T_MIN &&
+        (state.region !== Region.Region2 || state.pressure <= saturationPressure(C.R2_T_MIN))) ||
+      state.temperature >= C.B23_T_MAX ||
       detectRegionPT(state.pressure, state.temperature) === state.region) {
     return state;
   }
 
   const [lower, upper] = nativeB23TemperatureBracket(state.pressure);
-  const temperature = state.region === Region.Region3 ? lower : upper;
+  const vaporT = state.region === Region.Region2 && state.pressure < C.Pc
+    ? nativeSaturationTemperatureBracket(state.pressure)[1] : upper;
+  const temperature = state.region === Region.Region3 ? lower : Math.max(upper, vaporT);
   if (Math.abs(temperature - state.temperature) > boundaryTolerance(temperature, state.temperature)) {
     return state;
   }
@@ -139,7 +151,7 @@ function validateBasicEnvelope(state: BasicProperties, solverName: string): void
       ![state.cp, state.cv, state.isothermalCompressibility, state.speedOfSound]
         .every((value) => value !== null && Number.isFinite(value) && value > 0)) {
     throw new IF97Error(
-      `${solverName}: Region 3 numerical inconsistency at p=${state.pressure} MPa, T=${state.temperature} K: cannot construct a stable EOS state`,
+      `${solverName}: Region 3 numerical inconsistency: computed EOS state at p=${state.pressure} MPa, T=${state.temperature} K failed stability checks`,
     );
   }
 }

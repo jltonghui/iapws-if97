@@ -87,7 +87,7 @@ describe('formulation seam consistency', () => {
     expect(Math.abs(fromPS.pressure - p)).toBeLessThanOrEqual(1e-9 * p);
     if (r3.enthalpy > r2.enthalpy) {
       expect(Math.abs(fromTH.enthalpy - h)).toBeLessThan(1e-8);
-      expect(Math.abs(fromPH.enthalpy - h)).toBeLessThan(1e-7);
+      expect(Math.abs(fromPH.enthalpy - h)).toBeLessThan(1e-8);
       expect(Math.abs(fromTS.entropy - s)).toBeLessThan(1e-11);
       expect(Math.abs(fromPS.entropy - s)).toBeLessThan(1e-11);
     } else {
@@ -112,6 +112,42 @@ describe('formulation seam consistency', () => {
     expect(state.enthalpy).not.toBe(2611.8);
     expect(Math.abs(state.enthalpy - 2611.8)).toBeLessThan(0.122);
     expectEOS(state);
+  });
+
+  it.each([
+    { seam: 'B23', mode: 'PH', p: 60.25318929969272, T: 785.751452358067, target: 2659.4364744850222, region: Region.Region2 },
+    { seam: 'B13', mode: 'PH', p: 16.529164252685465, T: 623.1500000000015, target: 1670.8888842641024, region: Region.Region3 },
+    { seam: 'B13', mode: 'PS', p: 16.529164252685465, T: 623.1500000000015, target: 3.778323558769775, region: Region.Region3 },
+  ])('recovers the available $seam $mode root above the seam', ({ mode, p, T, target, region }) => {
+    const property = mode === 'PH' ? 'enthalpy' : 'entropy';
+    const tolerance = mode === 'PH' ? 1e-9 : 1e-12;
+    const forward = solvePT(p, T);
+    expect(forward.region).toBe(region);
+    expect(Math.abs(forward[property] - target)).toBeLessThanOrEqual(tolerance);
+    const recovered = mode === 'PH' ? solvePH(p, target) : solvePS(p, target);
+    expect(recovered.pressure).toBe(p);
+    for (const state of [recovered, solvePT(p, recovered.temperature)]) {
+      expect(state.region).toBe(region);
+      expect(Math.abs(state[property] - target)).toBeLessThanOrEqual(tolerance);
+    }
+    expectEOS(recovered);
+    expect(mode === 'PH' ? detectRegionPH(p, target) : detectRegionPS(p, target)).toBe(region);
+  });
+
+  it('recovers the available Region 5 HS root above the 1073.15 K seam', () => {
+    const h = 3947.8943977281956, s = 6.584737010570348;
+    const forward = solvePT(45.316819982352996, 1073.1500000000103);
+    expect(forward.region).toBe(Region.Region5);
+    expect(Math.abs(forward.enthalpy - h)).toBeLessThanOrEqual(1e-9);
+    expect(Math.abs(forward.entropy - s)).toBeLessThanOrEqual(1e-12);
+    const recovered = solveHS(h, s);
+    for (const state of [recovered, solvePT(recovered.pressure, recovered.temperature)]) {
+      expect(state.region).toBe(Region.Region5);
+      expect(Math.abs(state.enthalpy - h)).toBeLessThanOrEqual(1e-9);
+      expect(Math.abs(state.entropy - s)).toBeLessThanOrEqual(1e-12);
+    }
+    expectEOS(recovered);
+    expect(detectRegionHS(h, s)).toBe(Region.Region5);
   });
 
   it('preserves Region 1 ownership when HS round-trips the 623.15 K seam', () => {

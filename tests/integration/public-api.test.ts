@@ -6,7 +6,6 @@ import * as saturation from '../../src/saturation.js';
 import * as boundaries from '../../src/boundaries.js';
 import * as detect from '../../src/detect.js';
 import { region1 } from '../../src/regions/region1.js';
-import { solve as solveInternal } from '../../src/core/solver.js';
 
 describe('public API surface', () => {
   it('keeps the root export focused on main solver APIs', () => {
@@ -82,22 +81,18 @@ describe('public API native outputs', () => {
     expect(() => regions.region3ByRhoT(-1, 650)).toThrow(root.IF97Error);
   });
 
-  it('preserves the computed temperature through solve()', () => {
-    const forward = root.solvePT(3, 300);
-    const backward = root.solve({ mode: 'PH', p: 3, h: forward.enthalpy });
+  it.each([
+    { name: 'solve()', solve: (p: number, h: number) => root.solve({ mode: 'PH', p, h }) },
+    { name: 'solvePH()', solve: root.solvePH },
+  ])('preserves native EOS properties through $name', ({ solve }) => {
+    // IAPWS R7-97(2012), Table 5: h = 115.331273 kJ/kg at 3 MPa, 300 K.
+    // https://iapws.org/technical-guidance/release/IF97-Rev.download
+    const backward = solve(3, 115.331273);
 
-    expect(backward.temperature).toBe(solveInternal({ mode: 'PH', p: 3, h: forward.enthalpy }).temperature);
-    expect(backward.temperature).not.toBe(300);
-    expect(backward.enthalpy).toBe(region1(backward.pressure, backward.temperature).enthalpy);
-  });
-
-  it('preserves the computed temperature through direct solvePH()', () => {
-    const forward = root.solvePT(3, 300);
-    const backward = root.solvePH(3, forward.enthalpy);
-
-    expect(backward.temperature).toBe(solveInternal({ mode: 'PH', p: 3, h: forward.enthalpy }).temperature);
-    expect(backward.temperature).not.toBe(300);
-    expect(backward.enthalpy).toBe(region1(backward.pressure, backward.temperature).enthalpy);
+    expect(Math.abs(backward.temperature - 300)).toBeLessThan(2e-7);
+    expect(Math.abs(backward.enthalpy - 115.331273)).toBeLessThan(5e-7);
+    expect(backward).toMatchObject(region1(3, backward.temperature));
+    expect(backward.density).toBe(1 / backward.specificVolume);
   });
 
   it('preserves supplied coordinates within one ULP of a simple decimal', () => {

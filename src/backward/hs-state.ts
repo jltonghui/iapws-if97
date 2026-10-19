@@ -32,7 +32,7 @@ function evalPoly(table: CoefficientTable, aShift: number, bShift: number, a: nu
 const R1_PHS: CoefficientTable = [
   [0,0,-0.691997014660582],[0,1,-18.361254878756],[0,2,-9.28332409297335],
   [0,4,65.9639569909906],[0,5,-16.2060388912024],[0,6,450.620017338667],
-  [0,8,854.68067822417],[0,14,6075.23214001161],[1,0,32.6487682621856],
+  [0,8,854.68067822417],[0,14,6075.23214001162],[1,0,32.6487682621856],
   [1,1,-26.9408844582931],[1,4,-319.9478483343],[1,6,-928.35430704332],
   [2,0,30.3634537455249],[2,1,-65.0540422444146],[2,10,-4309.91316516130],
   [3,4,-747.512324096068],[4,1,730.000345529245],[4,4,1142.84032569021],
@@ -132,7 +132,7 @@ const R3A_PHS: CoefficientTable = [
   [2,16,-11664650591.4191],[3,0,35.5267086434461],[3,2,-596.144543825955],
   [3,3,-475.842430145708],[4,0,69.6781965359503],[4,1,335.674250377312],
   [4,4,25052.6809130882],[4,5,146997.380630766],[5,28,5.38069315091534e19],
-  [6,28,1.43619827291346e21],[7,24,3.64985866165990e19],[8,1,-2547.41561156775],
+  [6,28,1.43619827291346e21],[7,24,3.64985866165994e19],[8,1,-2547.41561156775],
   [10,32,2.40120197096563e27],[10,36,-3.93847464679496e29],[14,22,1.47073407024852e24],
   [18,28,-4.26391250432059e31],[20,36,1.94509340621077e38],[22,16,6.66212132114896e23],
   [22,28,7.06777016552858e33],[24,36,1.75563621975576e41],[28,16,1.08408607429124e28],
@@ -323,6 +323,10 @@ export function solveHSSeam(h: number, s: number, seam: FormulationSeamResolutio
     ], { solverName: 'solveHS', expectedRegion: seam.state.region, seam });
   }
   const solveRegion = (initial: BasicProperties): BasicProperties => {
+    // A converged Region 5 endpoint at the seam still belongs to Region 2.
+    if (initial.region === Region.Region5 && initial.temperature === C.R5_T_MIN) {
+      initial = region5(initial.pressure, C.R5_T_MIN + Number.EPSILON * C.R5_T_MIN);
+    }
     const state = solveHSInRegion(h, s, initial.region, initial);
     const reconstructed = state.region === Region.Region3
       ? solveRegion3PTBasic(state.pressure, state.temperature)

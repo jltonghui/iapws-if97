@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, it } from 'vitest';
+import { expectPrintedValue } from '../helpers/assertions.js';
 import {
   b3ab, b3cd, b3ef, b3gh, b3ij, b3jk, b3mn, b3op, b3qu, b3rx, b3uv, b3wx,
 } from '../../src/regions/boundaries.js';
@@ -66,8 +67,8 @@ const volumeCases = [
 describe('IAPWS SR5-05(2016) Region 3 verification values', () => {
   it.each(volumeCases)('3$subregion at p=$p MPa, T=$T K', ({ subregion, p, T, v }) => {
     const direct = evalSubregion(REGION3_SUBREGIONS[subregion], p, T);
-    expect(Math.abs((direct - v) / v), 'direct subregion equation').toBeLessThanOrEqual(1e-8);
-    expect(Math.abs((region3Volume(p, T) - v) / v), 'subregion dispatcher').toBeLessThanOrEqual(1e-8);
+    expectPrintedValue(direct, v, 10);
+    expectPrintedValue(region3Volume(p, T), v, 10);
   });
 
   it.each([
@@ -84,6 +85,6 @@ describe('IAPWS SR5-05(2016) Region 3 verification values', () => {
     { boundary: '3uv', equation: b3uv, p: 22.3, T: 6.477996121e2 },
     { boundary: '3wx', equation: b3wx, p: 22.3, T: 6.482049480e2 },
   ])('$boundary boundary at p=$p MPa', ({ equation, p, T }) => {
-    expect(Math.abs((equation(p) - T) / T)).toBeLessThanOrEqual(1e-8);
+    expectPrintedValue(equation(p), T, 10);
   });
 });

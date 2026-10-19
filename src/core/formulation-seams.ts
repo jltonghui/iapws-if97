@@ -8,7 +8,7 @@ import { saturationPressure } from '../regions/region4.js';
 import { bracketedNewton } from '../solvers/bracketed-newton.js';
 import { gibbsPropertyDerivatives } from './thermodynamic-derivatives.js';
 import { solveRegion3PTBasic } from './region3-pt.js';
-import { nativeB23TemperatureBracket } from './region-detector.js';
+import { detectRegionPT, nativeB23TemperatureBracket } from './region-detector.js';
 
 export type FormulationSeam = '13' | '23' | '25';
 
@@ -120,16 +120,18 @@ export function matchFixedSeam(
   const upper = pair.upper[property];
   if (!Number.isFinite(target) || target < Math.min(lower, upper) || target > Math.max(lower, upper)) return null;
   if (target === pair.canonical[property]) return resolution(pair, 'canonical');
-  if (target !== upper) {
-    const interior = coordinate === 'temperature'
-      ? region2(nextFloat(pair.pressure, -1), pair.temperature)
-      : pair.seam === '13' ? solveRegion3PTBasic(pair.pressure, nextFloat(pair.temperature, 1))
-      : pair.seam === '23' ? region2(pair.pressure, nextFloat(pair.temperature, 1))
-      : region5(pair.pressure, nextFloat(pair.temperature, 1));
-    // EOS rounding can put the first admissible float inside the endpoint's gap.
-    if (interior[property] === target) return null;
+  const interior = coordinate === 'temperature'
+    ? region2(nextFloat(pair.pressure, -1), pair.temperature)
+    : pair.seam === '13' ? solveRegion3PTBasic(pair.pressure, nextFloat(pair.temperature, 1))
+    : pair.seam === '23' ? region2(pair.pressure, nextFloat(pair.temperature, 1))
+    : region5(pair.pressure, nextFloat(pair.temperature, 1));
+  // EOS rounding can put the first admissible float inside the endpoint's gap.
+  if (coordinate === 'pressure' && detectRegionPT(interior.pressure, interior.temperature) === interior.region &&
+      Math.abs(interior[property] - target) <= (property === 'enthalpy' ? 1e-9 : 1e-12)) {
+    return resolution({ ...pair, canonical: interior }, 'canonical');
   }
   if (coordinate === 'temperature') {
+    if (interior[property] === target) return null;
     const first = gibbsPropertyDerivatives(pair.lower);
     const second = gibbsPropertyDerivatives(pair.upper);
     const derivative = property === 'enthalpy' ? 'dhDp' : 'dsDp';

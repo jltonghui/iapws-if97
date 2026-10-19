@@ -8,7 +8,7 @@ All notable changes to this project will be documented in this file.
 
 - Add `solveBasic(input)` and exported `BasicProperties` for all eight modes, without `density` or transport fields.
 - Include both Region 4 endpoints in `saturation` (`SaturationEndpoints`), including `x = 0` and `x = 1`, without extra saturation solves.
-- Check backward and supplementary boundary equations against official IAPWS values (relative error `≤ 1e-8`), covering all 26 Region 3 `v(p,T)` subregions.
+- Check backward and supplementary boundary equations against official IAPWS values at their printed precision, covering all 26 Region 3 `v(p,T)` subregions.
 
 ### Changed
 
@@ -17,6 +17,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - Correct two transcribed coefficients in Region 1 and Region 3b `p(h,s)` equations, verified against official check values.
+- Correct nine more coefficient transcription errors in Region 3 `v(p,T)`, HS boundaries, `p(h,s)`, and Region 2a `T(p,h)`/`T(p,s)`. Public `region3Volume` results change; refined solver results can change in their last floating-point bits.
 - Refine Gibbs HS states to recover the minimum-pressure boundary with the existing acceptance tolerance.
 - Explain the triple-point lower bound in low-temperature saturation errors without changing `OutOfRangeError` or input bounds.
 - Compute `density` as `1 / specificVolume` from the returned volume.
@@ -30,9 +31,12 @@ All notable changes to this project will be documented in this file.
 - Correct global enthalpy and entropy limits, computing upper limits from the Region 5 equation of state at module initialization to match runtime rounding.
 - Correct HS classification for cold liquids and at Region 1/3 and Region 2/5 boundaries; use computed saturation endpoints in the HS residual.
 - Preserve HS endpoint quality and single-phase properties when the endpoint EOS exactly reproduces input enthalpy and entropy.
-- Prioritize the saturation property span over overlapping single-phase fits in PH/PS classification at `623.15 K`.
+- Preserve exact PH/PS saturation endpoints at `623.15 K`; above the corner, recover superheated Region 2 roots selected by `solvePT` when their properties overlap the saturation span.
 - Revalidate backward states before resolving B23 rounding.
+- Recompute single-phase EOS properties after backward pressure or temperature boundary normalization.
+- Tighten Region 3 PT pressure convergence to relative `1e-12` and use the shared relative `1e-9` pressure acceptance tolerance for PH/PS.
 - Throw `IF97Error` when near-critical calculations cannot construct the requested stable phase or distinct saturation endpoints.
+- Tighten Region 3 PH convergence just above critical pressure and identify the computed candidate in stability errors.
 - Resolve Region 1/3, B23, and Region 2/5 overlaps using `solvePT` boundary ownership. In fit gaps, return the boundary EOS state with computed enthalpy and entropy. HS checks both properties at the same boundary coordinate.
 - Use pressure-dependent Region 2/5 PH/PS limits. Reject inputs above the local upper bound and restrict Region 5 inversion to its temperature range.
 - Reject HS inputs above the entropy-dependent Region 2/3 upper boundary at `100 MPa` or `1073.15 K`; retain valid boundary states.

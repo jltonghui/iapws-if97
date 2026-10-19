@@ -82,7 +82,7 @@ export function solveRegion3PTBasic(p: number, T: number): BasicProperties {
   const pressureLow = pressurePair?.[0] === p ? pressurePair[1] : 0;
   const state = solveRegion3StateAtPressure(p, T, 1 / region3Volume(p, T), pressureLow);
   const relErr = Math.abs(state.pressure - p) / p;
-  if (relErr > 1e-6) {
+  if (relErr > 1e-12) {
     throw new IF97Error(
       `solveRegion3PTBasic: density solve did not converge — target P=${p} MPa, got P=${state.pressure.toFixed(6)} MPa (relErr=${relErr.toExponential(2)})`,
     );

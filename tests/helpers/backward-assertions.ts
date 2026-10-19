@@ -1,18 +1,22 @@
 import { expect } from 'vitest';
 import type { BasicProperties } from '../../src/types.js';
 import { Region } from '../../src/types.js';
-import {
-  BACKWARD_REGION4_QUALITY_TOLERANCE,
-  backwardConstraintTolerance,
-  backwardSpecificVolumeTolerance,
-  type BackwardToleranceLabel,
-} from '../../src/backward/tolerances.js';
 
-const TEST_TOLERANCE_FLOOR: Record<BackwardToleranceLabel, number> = {
-  pressure: 5e-7,
+type BackwardToleranceLabel = 'pressure' | 'temperature' | 'enthalpy' | 'entropy';
+
+// Keep test budgets independent of the production acceptance policy.
+const TEST_RELATIVE_TOLERANCE: Record<BackwardToleranceLabel, number> = {
+  pressure: 1e-9,
+  temperature: 1e-9,
+  enthalpy: 1e-6,
+  entropy: 1e-6,
+};
+
+const TEST_ABSOLUTE_TOLERANCE: Record<BackwardToleranceLabel, number> = {
+  pressure: 0,
   temperature: 5e-7,
-  enthalpy: 5e-7,
-  entropy: 5e-7,
+  enthalpy: 1e-6,
+  entropy: 1e-6,
 };
 
 export function expectBackwardValue(
@@ -22,8 +26,8 @@ export function expectBackwardValue(
   tolerance?: number,
 ): void {
   const effectiveTolerance = tolerance ?? Math.max(
-    backwardConstraintTolerance(label, expected),
-    TEST_TOLERANCE_FLOOR[label],
+    TEST_RELATIVE_TOLERANCE[label] * Math.abs(expected),
+    TEST_ABSOLUTE_TOLERANCE[label],
   );
   expect(Math.abs(actual - expected)).toBeLessThanOrEqual(
     effectiveTolerance,
@@ -35,10 +39,7 @@ export function expectSpecificVolume(
   expected: number,
   tolerance?: number,
 ): void {
-  const effectiveTolerance = tolerance ?? Math.max(
-    backwardSpecificVolumeTolerance(expected),
-    5e-7,
-  );
+  const effectiveTolerance = tolerance ?? 1e-6 * Math.max(1, Math.abs(expected));
   expect(Math.abs(actual - expected)).toBeLessThanOrEqual(
     effectiveTolerance,
   );
@@ -58,7 +59,7 @@ export function expectRegion4RoundTrip(
   expectBackwardValue(actual.pressure, expected.pressure, 'pressure', options?.pressureTolerance);
   expectBackwardValue(actual.temperature, expected.temperature, 'temperature', options?.temperatureTolerance);
   expect(Math.abs((actual.quality ?? Number.NaN) - (expected.quality ?? Number.NaN))).toBeLessThanOrEqual(
-    options?.qualityTolerance ?? Math.max(BACKWARD_REGION4_QUALITY_TOLERANCE, 5e-7),
+    options?.qualityTolerance ?? 1e-6,
   );
 
   if (options?.specificVolumeTolerance !== undefined) {

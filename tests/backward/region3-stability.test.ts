@@ -15,6 +15,15 @@ describe('backward Region 3 stability validation', () => {
     }
   });
 
+  it('identifies the failed computed state in stability errors', () => {
+    const candidate = { ...stable, pressure: stable.pressure - 1e-8, cp: -1 };
+    expect(() => validateBackwardState(candidate, [
+      { label: 'pressure', expected: stable.pressure },
+    ], options)).toThrow(
+      `stability-regression: Region 3 numerical inconsistency: computed EOS state at p=${candidate.pressure} MPa, T=${candidate.temperature} K failed stability checks`,
+    );
+  });
+
   it('accepts a stable Region 3 state', () => {
     expect(validateBackwardState(stable, [], options)).toEqual(stable);
   });

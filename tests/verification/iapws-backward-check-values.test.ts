@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { expectPrintedValue } from '../helpers/assertions.js';
 import {
   b2bc_H_P,
   b3ab_P_to_H,
@@ -32,11 +33,6 @@ import {
 import { boundary23_P_to_T, boundary23_T_to_P } from '../../src/regions/boundaries.js';
 import { region4BackwardTemperatureHS } from '../../src/saturation/region4-hs.js';
 
-// Published values are rounded; verify raw correlations with relative error, before EOS refinement.
-function expectCheckValue(actual: number, expected: number): void {
-  expect(Math.abs((actual - expected) / expected)).toBeLessThanOrEqual(1e-8);
-}
-
 // https://iapws.org/technical-guidance/release/IF97-Rev.download
 describe('IF97 raw backward check values', () => {
   it.each([
@@ -44,7 +40,7 @@ describe('IF97 raw backward check values', () => {
     { p: 80, h: 500, T: 378.108626 },
     { p: 80, h: 1500, T: 611.041229 },
   ])('Table 7, R1 T(p,h): p=$p, h=$h', ({ p, h, T }) => {
-    expectCheckValue(r1TemperaturePH(p, h), T);
+    expectPrintedValue(r1TemperaturePH(p, h), T, 9);
   });
 
   it.each([
@@ -52,7 +48,7 @@ describe('IF97 raw backward check values', () => {
     { p: 80, s: 0.5, T: 309.979785 },
     { p: 80, s: 3, T: 565.899909 },
   ])('Table 9, R1 T(p,s): p=$p, s=$s', ({ p, s, T }) => {
-    expectCheckValue(r1TemperaturePS(p, s), T);
+    expectPrintedValue(r1TemperaturePS(p, s), T, 9);
   });
 
   it.each([
@@ -66,7 +62,7 @@ describe('IF97 raw backward check values', () => {
     { subregion: '2c', p: 60, h: 2700, T: 791.137067 },
     { subregion: '2c', p: 60, h: 3200, T: 882.756860 },
   ])('Table 24, R$subregion T(p,h): p=$p, h=$h', ({ p, h, T }) => {
-    expectCheckValue(r2TemperaturePH(p, h), T);
+    expectPrintedValue(r2TemperaturePH(p, h), T, 9);
   });
 
   it.each([
@@ -80,13 +76,17 @@ describe('IF97 raw backward check values', () => {
     { subregion: '2c', p: 80, s: 5.25, T: 854.011484 },
     { subregion: '2c', p: 80, s: 5.75, T: 949.017998 },
   ])('Table 29, R$subregion T(p,s): p=$p, s=$s', ({ p, s, T }) => {
-    expectCheckValue(r2TemperaturePS(p, s), T);
+    expectPrintedValue(r2TemperaturePS(p, s), T, 9);
+  });
+
+  it('rounds the Table 29 R2a point at p=0.1 MPa, s=8 to the published digits', () => {
+    expect(r2TemperaturePS(0.1, 8).toPrecision(9)).toBe('514.127081');
   });
 
   it('reproduces the B23 and B2bc verification points, Eqs. 5, 6 and 20', () => {
-    expectCheckValue(boundary23_T_to_P(623.15), 16.5291643);
-    expectCheckValue(boundary23_P_to_T(16.5291643), 623.15);
-    expectCheckValue(b2bc_H_P(3516.004323), 100);
+    expectPrintedValue(boundary23_T_to_P(623.15), 16.5291643, 9);
+    expectPrintedValue(boundary23_P_to_T(16.5291643), 623.15, 9);
+    expectPrintedValue(b2bc_H_P(3516.004323), 100, 9);
   });
 });
 
@@ -97,7 +97,7 @@ describe('SR2-01(2014) raw p(h,s) check values', () => {
     { h: 90, s: 0, p: 91.92954727 },
     { h: 1500, s: 3.4, p: 58.68294423 },
   ])('Table 3, R1: h=$h, s=$s', ({ h, s, p }) => {
-    expectCheckValue(r1Phs(h, s), p);
+    expectPrintedValue(r1Phs(h, s), p, 10);
   });
 
   for (const { subregion, pressure, cases } of [
@@ -118,13 +118,13 @@ describe('SR2-01(2014) raw p(h,s) check values', () => {
     ] },
   ]) {
     it.each(cases)(`Table 9, R${subregion}: h=$h, s=$s`, ({ h, s, p }) => {
-      expectCheckValue(pressure(h, s), p);
-      if (subregion === '2c') expectCheckValue(backward2cPhs(h, s), p);
+      expectPrintedValue(pressure(h, s), p, 10);
+      if (subregion === '2c') expectPrintedValue(backward2cPhs(h, s), p, 10);
     });
   }
 
   it('reproduces the h2ab(s) verification point, Eq. 2', () => {
-    expectCheckValue(b2abBoundary(7), 3376.437884);
+    expectPrintedValue(b2abBoundary(7), 3376.437884, 10);
   });
 });
 
@@ -139,8 +139,8 @@ describe('SR3-03(2014) raw Region 3 backward check values', () => {
     { subregion: '3b', p: 100, h: 2700, T: 842.0460876, v: 2.404234998e-3 },
   ])('Tables 5 and 8, R$subregion T/v(p,h): p=$p, h=$h', ({ p, h, T, v }) => {
     const initial = r3BackwardPHInitial(p, h);
-    expectCheckValue(initial.T, T);
-    expectCheckValue(1 / initial.rho, v);
+    expectPrintedValue(initial.T, T, 10);
+    expectPrintedValue(1 / initial.rho, v, 10);
   });
 
   it.each([
@@ -152,12 +152,12 @@ describe('SR3-03(2014) raw Region 3 backward check values', () => {
     { subregion: '3b', p: 100, s: 5, T: 847.4332825, v: 2.449610757e-3 },
   ])('Tables 12 and 15, R$subregion T/v(p,s): p=$p, s=$s', ({ p, s, T, v }) => {
     const initial = r3BackwardPSInitial(p, s);
-    expectCheckValue(initial.T, T);
-    expectCheckValue(1 / initial.rho, v);
+    expectPrintedValue(initial.T, T, 10);
+    expectPrintedValue(1 / initial.rho, v, 10);
   });
 
   it('reproduces the h3ab(p) verification point, Eq. 1', () => {
-    expectCheckValue(b3ab_P_to_H(25), 2095.936454);
+    expectPrintedValue(b3ab_P_to_H(25), 2095.936454, 10);
   });
 });
 
@@ -176,7 +176,7 @@ describe('SR4-04(2014) raw p(h,s), boundary and Tsat(h,s) check values', () => {
     ] },
   ]) {
     it.each(cases)(`Table 5, R${subregion} p(h,s): h=$h, s=$s`, ({ h, s, p }) => {
-      expectCheckValue(pressure(h, s), p);
+      expectPrintedValue(pressure(h, s), p, 10);
     });
   }
 
@@ -208,7 +208,7 @@ describe('SR4-04(2014) raw p(h,s), boundary and Tsat(h,s) check values', () => {
     ] },
   ]) {
     it.each(cases)(`Table ${table}, ${equation}(s): s=$s`, ({ s, h }) => {
-      expectCheckValue(enthalpy(s), h);
+      expectPrintedValue(enthalpy(s), h, 10);
     });
   }
 
@@ -217,7 +217,7 @@ describe('SR4-04(2014) raw p(h,s), boundary and Tsat(h,s) check values', () => {
     { h: 2700, s: 5.15, T: 768.5345532 },
     { h: 2800, s: 5.2, T: 817.6202120 },
   ])('Table 26, TB23(h,s): h=$h, s=$s', ({ h, s, T }) => {
-    expectCheckValue(tB23hs(h, s), T);
+    expectPrintedValue(tB23hs(h, s), T, 10);
   });
 
   it.each([
@@ -225,6 +225,6 @@ describe('SR4-04(2014) raw p(h,s), boundary and Tsat(h,s) check values', () => {
     { h: 2400, s: 6, T: 425.1373305 },
     { h: 2500, s: 5.5, T: 522.5579013 },
   ])('Table 29, Tsat(h,s): h=$h, s=$s', ({ h, s, T }) => {
-    expectCheckValue(region4BackwardTemperatureHS(h, s), T);
+    expectPrintedValue(region4BackwardTemperatureHS(h, s), T, 10);
   });
 });

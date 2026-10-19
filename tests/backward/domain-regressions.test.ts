@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { IF97Error, Region, solve, solveBasic, solveHS, solvePH, solvePS, solvePT, solvePx, solveTH, solveTS, solveTx } from '../../src/index.js';
-import { detectRegionHS, detectRegionPH, detectRegionPS } from '../../src/detect.js';
+import { IF97Error, OutOfRangeError, Region, solve, solveBasic, solveHS, solvePH, solvePS, solvePT, solvePx, solveTH, solveTS, solveTx } from '../../src/index.js';
+import { detectRegionHS, detectRegionPH, detectRegionPS, detectRegionTH, detectRegionTS } from '../../src/detect.js';
 import { boundary23_T_to_P } from '../../src/boundaries.js';
 import { saturationPressure, saturationTemperature } from '../../src/saturation.js';
-import { H_MAX, P_MIN, Pc, S_MAX, T_MAX, Tc } from '../../src/constants.js';
+import { H_MAX, H_MIN, P_MAX, P_MIN, Pc, S_MAX, S_MIN, T_MAX, T_MIN, Tc } from '../../src/constants.js';
 import { region3ByRhoT, region3PressureResidual } from '../../src/regions/region3.js';
 import { region1 } from '../../src/regions/region1.js';
 import { region2 } from '../../src/regions/region2.js';
@@ -60,6 +60,88 @@ describe('Public domain round-trip regressions', () => {
     expect(() => solvePS(p, s)).toThrow(IF97Error);
     expect(() => solve({ mode: 'PS', p, s })).toThrow(IF97Error);
     expect(() => solveBasic({ mode: 'PS', p, s })).toThrow(IF97Error);
+  });
+
+  it.each([
+    { p: 10, T: 273.15000000000003, modes: ['PS'] as const },
+    { p: 100, T: 273.15000000000003, modes: ['PS', 'HS', 'TS'] as const },
+    { p: 100, T: 273.1500000000001, modes: ['PS', 'HS', 'TS'] as const },
+    { p: 99.99999999999989, T: 273.1500000000001, modes: ['PS', 'HS', 'TS'] as const },
+    { p: 0.0006112126774443503, T: 273.1500000000001, modes: ['PH', 'HS', 'TH'] as const },
+  ].flatMap(({ p, T, modes }) => modes.map((mode) => ({ p, T, mode }))))('accepts EOS rounding near the lower $mode corner at p=$p MPa, T=$T K', ({ p, T, mode }) => {
+    const forward = solvePT(p, T);
+    expect(forward.region).toBe(Region.Region1);
+    const { enthalpy: h, entropy: s } = forward;
+    const input = ({
+      PH: { mode: 'PH', p, h },
+      PS: { mode: 'PS', p, s },
+      HS: { mode: 'HS', h, s },
+      TH: { mode: 'TH', T, h },
+      TS: { mode: 'TS', T, s },
+    } as const)[mode];
+    expect({
+      PH: () => detectRegionPH(p, h),
+      PS: () => detectRegionPS(p, s),
+      HS: () => detectRegionHS(h, s),
+      TH: () => detectRegionTH(T, h),
+      TS: () => detectRegionTS(T, s),
+    }[mode]()).toBe(Region.Region1);
+    const direct = {
+      PH: () => solvePH(p, h),
+      PS: () => solvePS(p, s),
+      HS: () => solveHS(h, s),
+      TH: () => solveTH(T, h),
+      TS: () => solveTS(T, s),
+    }[mode];
+    for (const recovered of [direct(), solve(input), solveBasic(input)]) {
+      expect(recovered.region).toBe(Region.Region1);
+      expect(recovered.pressure).toBeGreaterThanOrEqual(P_MIN);
+      expect(recovered.pressure).toBeLessThanOrEqual(P_MAX);
+      expect(recovered.temperature).toBeGreaterThanOrEqual(T_MIN);
+      expect(recovered.temperature).toBeLessThanOrEqual(T_MAX);
+      const reconstructed = solvePT(recovered.pressure, recovered.temperature);
+      expect(reconstructed.region).toBe(Region.Region1);
+      expectBackwardValue(recovered.enthalpy, h, 'enthalpy', 1e-12);
+      expectBackwardValue(recovered.entropy, s, 'entropy', 1e-14);
+      expect(recovered.enthalpy).toBe(reconstructed.enthalpy);
+      expect(recovered.entropy).toBe(reconstructed.entropy);
+    }
+  });
+
+  it.each(['PH', 'HS', 'TH'] as const)('rejects %s below H_MIN beyond EOS rounding', (mode) => {
+    const h = H_MIN - 1e-9;
+    const s = region1(P_MIN, T_MIN).entropy;
+    const input = ({
+      PH: { mode: 'PH', p: P_MIN, h },
+      HS: { mode: 'HS', h, s },
+      TH: { mode: 'TH', T: T_MIN, h },
+    } as const)[mode];
+    const direct = {
+      PH: () => solvePH(P_MIN, h),
+      HS: () => solveHS(h, s),
+      TH: () => solveTH(T_MIN, h),
+    }[mode];
+    for (const run of [direct, () => solve(input), () => solveBasic(input)]) {
+      expect(run).toThrow(OutOfRangeError);
+    }
+  });
+
+  it.each(['PS', 'HS', 'TS'] as const)('rejects %s below S_MIN beyond EOS rounding', (mode) => {
+    const h = region1(P_MAX, T_MIN).enthalpy;
+    const s = S_MIN - 1e-12;
+    const input = ({
+      PS: { mode: 'PS', p: P_MAX, s },
+      HS: { mode: 'HS', h, s },
+      TS: { mode: 'TS', T: T_MIN, s },
+    } as const)[mode];
+    const direct = {
+      PS: () => solvePS(P_MAX, s),
+      HS: () => solveHS(h, s),
+      TS: () => solveTS(T_MIN, s),
+    }[mode];
+    for (const run of [direct, () => solve(input), () => solveBasic(input)]) {
+      expect(run).toThrow(OutOfRangeError);
+    }
   });
 
   it.each([3, 100])('preserves the existing PH liquid lower-bound tolerance at p=%s', (p) => {
@@ -354,12 +436,19 @@ describe('Public domain round-trip regressions', () => {
     expect(recovered.cp).not.toBeNull();
   });
 
-  it.each([623.150001, 623.1501])('keeps PH/PS inside the actual Region 4 span above the 623.15 K seam at T=%s K', (T) => {
+  it.each([623.150001, 623.1501])('prefers PT-owned vapor in the Region 4 fit overlap above the 623.15 K seam at T=%s K', (T) => {
     const forward = solveTx(T, 1 - 1e-9);
-    for (const recovered of [solvePH(forward.pressure, forward.enthalpy), solvePS(forward.pressure, forward.entropy)]) {
-      expect(recovered.region).toBe(Region.Region4);
-      expectBackwardValue(recovered.temperature, T, 'temperature');
-      expect(Math.abs((recovered.quality ?? Number.NaN) - forward.quality!)).toBeLessThanOrEqual(1e-6);
+    for (const [property, backward] of [['enthalpy', solvePH], ['entropy', solvePS]] as const) {
+      const recovered = backward(forward.pressure, forward[property]);
+      const reconstructed = solvePT(recovered.pressure, recovered.temperature);
+      expect(recovered.region).toBe(Region.Region2);
+      expect(reconstructed.region).toBe(Region.Region2);
+      expect(recovered.quality).toBeNull();
+      expect(recovered.temperature).toBeGreaterThan(T);
+      expectBackwardValue(recovered.pressure, forward.pressure, 'pressure');
+      expectBackwardValue(recovered[property], forward[property], property);
+      expectBackwardValue(recovered.enthalpy, reconstructed.enthalpy, 'enthalpy');
+      expectBackwardValue(recovered.entropy, reconstructed.entropy, 'entropy');
     }
   });
 

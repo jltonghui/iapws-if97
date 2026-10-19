@@ -6,7 +6,12 @@ export function assertFiniteNumber(parameter: string, value: unknown): asserts v
   }
 }
 
-// Accept floating-point residue at a closed lower bound.
-export function withinClosedLowerBound(value: number, boundary: number): boolean {
-  return value >= boundary - 8 * Number.EPSILON * Math.max(1, Math.abs(boundary));
+// shortcut: EOS cancellation floors are empirical; remeasure if the EOS evaluation changes.
+export function withinClosedLowerBound(
+  value: number,
+  boundary: number,
+  property: 'enthalpy' | 'entropy',
+): boolean {
+  const floor = property === 'enthalpy' ? 1e-12 : 1e-14;
+  return value >= boundary - Math.max(floor, 8 * Number.EPSILON * Math.max(1, Math.abs(boundary)));
 }

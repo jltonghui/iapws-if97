@@ -6,7 +6,7 @@ import { region2 } from '../regions/region2.js';
 import { region5 } from '../regions/region5.js';
 import { saturationEndpointsAtPressure } from '../saturation/common.js';
 import { OutOfRangeError, Region } from '../types.js';
-import { nativeB23TemperatureBracket, nativeSaturationTemperatureBracket } from '../core/region-detector.js';
+import { detectRegionPT, nativeB23TemperatureBracket, nativeSaturationTemperatureBracket } from '../core/region-detector.js';
 import { withinClosedLowerBound } from '../core/input-validation.js';
 import { findPressureSeam, type FormulationSeamResolution } from '../core/formulation-seams.js';
 
@@ -20,7 +20,7 @@ export function assertPressurePropertyEnvelope(
   const maximum = (p <= C.R5_P_MAX ? region5(p, C.R5_T_MAX) : region2(p, C.R2_T_MAX))[property];
   const aboveMinimum = property === 'enthalpy'
     ? target >= minimum || isClose(target, minimum)
-    : withinClosedLowerBound(target, minimum);
+    : withinClosedLowerBound(target, minimum, 'entropy');
   if (!aboveMinimum || !withinClosedUpperBound(target, maximum)) {
     throw new OutOfRangeError(
       `${property === 'enthalpy' ? 'Enthalpy' : 'Entropy'} at p=${p} MPa`, target, minimum, maximum,
@@ -65,10 +65,10 @@ function detectRegionPressureProperty(
   if (!Number.isFinite(p) || !Number.isFinite(target)) return -1;
   const seam = pressurePropertySeam(p, target, property);
   if (seam !== null) return seam.state.region;
-  // Preserve PH's existing lower-bound tolerance; PS absorbs only public rounding noise.
+  // Preserve PH's existing lower-bound tolerance; PS absorbs EOS rounding noise.
   const aboveMinimum = (minimum: number): boolean => property === 'enthalpy'
     ? minimum <= target || isClose(target, minimum)
-    : withinClosedLowerBound(target, minimum);
+    : withinClosedLowerBound(target, minimum, 'entropy');
   if (p >= C.P_MIN && p <= C.B23_P_MIN) {
     if (p >= C.Pt) {
       const endpoints = saturationEndpointsAtPressure(p);
@@ -98,6 +98,15 @@ function detectRegionPressureProperty(
     if (p < C.Pc) {
       try {
         const endpoints = saturationEndpointsAtPressure(p);
+        // Native B23 cancellation can shift its first Region 2 float by a few ULPs.
+        const roundoff = 128 * Number.EPSILON * Math.max(1, Math.abs(target));
+        if (target !== endpoints.liquid[property] && target !== endpoints.vapor[property] &&
+            boundary32 <= target + roundoff && target < endpoints.vapor[property]) {
+          // Near P13, the Region 3 saturation span can contain a PT-owned Region 2 root.
+          const [, vaporT] = nativeSaturationTemperatureBracket(p);
+          const T = Math.max(region2T, vaporT);
+          if (detectRegionPT(p, T) === Region.Region2 && region2(p, T)[property] <= target + roundoff) return Region.Region2;
+        }
         if (isClose(target, endpoints.liquid[property]) || isClose(target, endpoints.vapor[property]) ||
             (endpoints.liquid[property] < target && target < endpoints.vapor[property])) {
           return Region.Region4;

@@ -61,11 +61,22 @@ describe.each(modes)('Region 2/5 $name boundaries', ({
     expectReconstruction(backward(p, value), p, upper, property, Region.Region2);
   });
 
-  it.each([0.001, 50])('maps the open Region 5 endpoint to the owned Region 2 seam at p=%s MPa', (p) => {
+  it.each([0.001, 50])('prefers an admissible Region 5 root over snapping its open endpoint at p=%s MPa', (p) => {
     const value = region5(p, R2_T_MAX)[property];
+    const tolerance = property === 'enthalpy' ? 1e-9 : 1e-12;
+    const interior = solvePT(p, R2_T_MAX + Number.EPSILON * R2_T_MAX);
+    expect(interior.region).toBe(Region.Region5);
+    expect(Math.abs(interior[property] - value)).toBeLessThanOrEqual(tolerance);
     expect(value).toBeGreaterThan(region2(p, R2_T_MAX)[property]);
-    expect(detect(p, value)).toBe(Region.Region2);
-    expectReconstruction(backward(p, value), p, region2(p, R2_T_MAX)[property], property, Region.Region2);
+    expect(detect(p, value)).toBe(Region.Region5);
+    for (const run of [backward, unified]) {
+      const recovered = run(p, value);
+      expect(recovered.temperature).toBeGreaterThan(R2_T_MAX);
+      expectReconstruction(recovered, p, value, property, Region.Region5);
+      for (const state of [recovered, solvePT(p, recovered.temperature)]) {
+        expect(Math.abs(state[property] - value)).toBeLessThanOrEqual(tolerance);
+      }
+    }
   });
 
   it('rejects an arbitrarily large input in the detector', () => {

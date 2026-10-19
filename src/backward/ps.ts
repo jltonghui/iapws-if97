@@ -57,7 +57,7 @@ const R2A_PS: CoefficientTable = [
   [-1.5,-24,-392359.83861984],[-1.5,-23,515265.7382727],[-1.5,-19,40482.443161048],
   [-1.5,-13,-321.93790923902],[-1.5,-11,96.961424218694],[-1.5,-10,-22.867846371773],
   [-1.25,-19,-449429.14124357],[-1.25,-15,-5011.8336020166],[-1.25,-6,0.35684463560015],
-  [-1,-26,44235.33584819],[-1,-21,-13673.388811708],[-1,-17,421632.6027864],
+  [-1,-26,44235.33584819],[-1,-21,-13673.388811708],[-1,-17,421632.60207864],
   [-1,-16,22516.925837475],[-1,-9,474.42144865646],[-1,-8,-149.31130797647],
   [-0.75,-15,-197811.26320452],[-0.75,-14,-23554.39947076],[-0.5,-26,-19070.616302076],
   [-0.5,-13,55375.669883164],[-0.5,-9,3829.3691437363],[-0.5,-7,-603.91860580567],
@@ -219,7 +219,7 @@ export function solvePS(p: number, s: number): BasicProperties {
   if (p < C.P_MIN || p > C.P_MAX) {
     throw new OutOfRangeError('Pressure', p, C.P_MIN, C.P_MAX);
   }
-  if (!withinClosedLowerBound(s, C.S_MIN) || s > C.S_MAX) {
+  if (!withinClosedLowerBound(s, C.S_MIN, 'entropy') || s > C.S_MAX) {
     throw new OutOfRangeError('Entropy', s, C.S_MIN, C.S_MAX);
   }
   assertCriticalRegion4PSInput(p, s, 'solvePS');
@@ -281,13 +281,12 @@ export function solvePS(p: number, s: number): BasicProperties {
     }
     case Region.Region3: {
       try {
-        const pressureTolerance = 1e-5 * Math.max(1, Math.abs(p));
         const initial = r3BackwardPSInitial(p, s);
         const state = solveRegion3PS(p, s, initial.rho, initial.T);
         const validated = validateBackwardState(
           state,
           [
-            { label: 'pressure', expected: p, tolerance: pressureTolerance },
+            { label: 'pressure', expected: p },
             { label: 'entropy', expected: s },
           ],
           { solverName: 'solvePS', expectedRegion: Region.Region3 },

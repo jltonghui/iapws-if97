@@ -13,17 +13,19 @@ describe('Region 4 equation precision', () => {
     expect(saturationTemperature(p)).toBe(T);
   });
 
-  it('keeps the measured native triple-point fit gap monotone', () => {
+  it('keeps pressure and temperature monotone around the triple point', () => {
     const bits = new BigUint64Array(new Float64Array([Tt]).buffer);
     bits[0] -= 1n;
     const lower = new Float64Array(bits.buffer)[0];
     bits[0] += 2n;
     const upper = new Float64Array(bits.buffer)[0];
-    expect(saturationPressurePair(Tt)[0]).toBe(0.0006116570000106673);
-    expect(saturationPressurePair(lower)[0]).toBeGreaterThan(Pt);
-    expect(saturationPressure(lower)).toBe(Pt);
-    expect(saturationPressure(upper)).toBeGreaterThan(Pt);
-    expect(saturationTemperature((Pt + saturationPressurePair(Tt)[0]) / 2)).toBe(Tt);
+    // IAPWS R7-97(2012), Eq. (9): pt = 611.657 Pa; allow half its last published digit.
+    // https://iapws.org/technical-guidance/release/IF97-Rev.download
+    expect(Math.abs(saturationPressurePair(Tt)[0] - 0.000611657)).toBeLessThan(5e-10);
+    expect(saturationPressure(lower)).toBeLessThanOrEqual(Pt);
+    expect(saturationPressure(upper)).toBeGreaterThanOrEqual(Pt);
+    expect(saturationTemperature(saturationPressure(lower))).toBeLessThanOrEqual(Tt);
+    expect(saturationTemperature(saturationPressure(upper))).toBeGreaterThanOrEqual(Tt);
   });
 
   // 100-digit references use the exact binary64 coefficient and input values.

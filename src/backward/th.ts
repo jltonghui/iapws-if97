@@ -6,7 +6,7 @@
 import type { BasicProperties } from '../types.js';
 import * as C from '../constants.js';
 import { IF97Error, OutOfRangeError } from '../types.js';
-import { assertFiniteNumber } from '../core/input-validation.js';
+import { assertFiniteNumber, withinClosedLowerBound } from '../core/input-validation.js';
 import { uniqueFixedTemperatureState } from './fixed-temperature-candidates.js';
 
 /**
@@ -31,7 +31,7 @@ export function solveTH(T: number, h: number): BasicProperties {
   if (T < C.T_MIN || T > C.T_MAX) {
     throw new OutOfRangeError('Temperature', T, C.T_MIN, C.T_MAX);
   }
-  if (h < C.H_MIN || h > C.H_MAX) {
+  if (!withinClosedLowerBound(h, C.H_MIN, 'enthalpy') || h > C.H_MAX) {
     throw new OutOfRangeError('Enthalpy', h, C.H_MIN, C.H_MAX);
   }
   if (Math.abs(T - C.Tc) < C.CRITICAL_T_EXCLUSION_BAND) {

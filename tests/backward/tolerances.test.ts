@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { solvePT } from '../../src/core/solver.js';
+import { solveRegion3PTBasic } from '../../src/core/region3-pt.js';
 import { solvePH, solvePS, solveTx } from '../../src/index.js';
 import { P_MIN, Pt, Tt } from '../../src/constants.js';
 import { validateBackwardState } from '../../src/backward/solution-validation.js';
 import { backwardConstraintTolerance, region4SaturationPressureTolerance } from '../../src/backward/tolerances.js';
+import { region1 } from '../../src/regions/region1.js';
+import { region2 } from '../../src/regions/region2.js';
+import { region3ByRhoT } from '../../src/regions/region3.js';
 import { saturationPressure, saturationTemperature } from '../../src/regions/region4.js';
+import { region5 } from '../../src/regions/region5.js';
 import { IF97Error, Region } from '../../src/types.js';
 
 describe('backward enthalpy tolerance', () => {
@@ -22,6 +27,45 @@ describe('backward enthalpy tolerance', () => {
     for (const constraint of constraints) {
       expect(validated[constraint.label]).not.toBe(constraint.expected);
     }
+  });
+
+  it('returns Region 1 EOS properties at the normalized PH boundary coordinates', () => {
+    const input = region1(99, 623.1500002);
+    const recovered = solvePH(input.pressure, input.enthalpy);
+
+    expect(recovered.temperature).toBe(623.15);
+    expect(recovered).toMatchObject(region1(recovered.pressure, recovered.temperature));
+  });
+
+  it('checks the enthalpy constraint again after boundary EOS recomputation', () => {
+    const state = region1(99, 623.1500002);
+
+    expect(() => validateBackwardState(state, [
+      { label: 'enthalpy', expected: state.enthalpy, tolerance: 1e-8 },
+    ], { solverName: 'normalized-enthalpy-regression' })).toThrow(/failed to match enthalpy/);
+  });
+
+  it('recomputes Region 2 EOS properties after normalizing its upper temperature', () => {
+    const state = region2(3, 1073.1500002);
+
+    expect(validateBackwardState(state, [], { solverName: 'normalized-region2-regression' }))
+      .toEqual(region2(3, 1073.15));
+  });
+
+  it('recomputes Region 3 EOS properties after normalizing its pressure ceiling', () => {
+    const expected = solveRegion3PTBasic(100, 650);
+    const state = region3ByRhoT((1 / expected.specificVolume) * (1 + 1e-11), 650);
+    expect(state.pressure).toBeGreaterThan(100);
+
+    expect(validateBackwardState(state, [], { solverName: 'normalized-region3-regression' }))
+      .toEqual(expected);
+  });
+
+  it('recomputes Region 5 EOS properties after normalizing its pressure and temperature ceilings', () => {
+    const state = region5(50.00000002, 2273.1500002);
+
+    expect(validateBackwardState(state, [], { solverName: 'normalized-region5-regression' }))
+      .toEqual(region5(50, 2273.15));
   });
 
   it('uses a spec-scale default tolerance for enthalpy constraints', () => {
@@ -73,6 +117,16 @@ describe('backward pressure tolerance', () => {
     expect(() => validateBackwardState(drifted, [], {
       solverName: 'saturation-pressure-roundoff',
     })).not.toThrow();
+  });
+
+  it('rejects out-of-envelope Region 4 coordinates instead of normalizing only the outer state', () => {
+    const state = solveTx(Tt, 0.5);
+    const options = { solverName: 'region4-endpoint-consistency-regression' };
+    expect(validateBackwardState(state, [], options)).toBe(state);
+
+    const drifted = { ...state, pressure: P_MIN, temperature: 273.1499999 };
+    expect(() => validateBackwardState(drifted, [], options))
+      .toThrow(/outside the IF97 PT envelope/);
   });
 
   it('rejects computed pressure meaningfully below P_MIN', () => {

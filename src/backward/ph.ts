@@ -16,7 +16,7 @@ import { region2 } from '../regions/region2.js';
 import { region3ByRhoT } from '../regions/region3.js';
 import { region5 } from '../regions/region5.js';
 import { saturationTemperature } from '../regions/region4.js';
-import { assertFiniteNumber } from '../core/input-validation.js';
+import { assertFiniteNumber, withinClosedLowerBound } from '../core/input-validation.js';
 import { assertPressurePropertyEnvelope, detectRegionPH, pressurePropertySeam } from './pressure-property-region.js';
 import { newtonRaphson } from '../solvers/newton-raphson.js';
 import { bracketedNewton } from '../solvers/bracketed-newton.js';
@@ -80,7 +80,7 @@ const R2A_PH: CoefficientTable = [
   [2,2,-0.31078046629583],[2,7,11.670873077107],[2,36,128127984.04046],[2,38,-985549096.23276],
   [2,40,2822454697.3002],[2,42,-3594897141.0703],[2,44,1722734991.3197],[3,24,-13551.334240775],
   [3,44,12848734.66465],[4,12,1.3865724283226],[4,32,235988.32556514],[4,44,-13105236.545054],
-  [5,32,7399.9835474766],[5,36,-551966.9703006],[5,42,3715408.5996233],[6,34,19127.7292396],
+  [5,32,7399.9835474766],[5,36,-551966.9703006],[5,42,3715408.5996233],[6,34,19127.729239660],
   [6,44,-415351.64835634],[7,28,-62.459855192507],
 ] as const;
 
@@ -232,6 +232,8 @@ function solveRegion3PH(p: number, h: number, rho0: number, T0: number): BasicPr
       ],
     };
   }, [rho0, T0], {
+    // Near critical pressure, the default residual can cross a stability boundary.
+    tolerance: 1e-13,
     isValid: ([candidateRho, candidateT]) => candidateRho > 0 && candidateT > 0,
   });
   return region3ByRhoT(rho, T);
@@ -251,7 +253,7 @@ export function solvePH(p: number, h: number): BasicProperties {
   if (p < C.P_MIN || p > C.P_MAX) {
     throw new OutOfRangeError('Pressure', p, C.P_MIN, C.P_MAX);
   }
-  if (h < C.H_MIN || h > C.H_MAX) {
+  if (!withinClosedLowerBound(h, C.H_MIN, 'enthalpy') || h > C.H_MAX) {
     throw new OutOfRangeError('Enthalpy', h, C.H_MIN, C.H_MAX);
   }
   assertCriticalRegion4PHInput(p, h, 'solvePH');
@@ -313,13 +315,12 @@ export function solvePH(p: number, h: number): BasicProperties {
     }
     case Region.Region3: {
       try {
-        const pressureTolerance = 1e-5 * Math.max(1, Math.abs(p));
         const initial = r3BackwardPHInitial(p, h);
         const state = solveRegion3PH(p, h, initial.rho, initial.T);
         const validated = validateBackwardState(
           state,
           [
-            { label: 'pressure', expected: p, tolerance: pressureTolerance },
+            { label: 'pressure', expected: p },
             { label: 'enthalpy', expected: h },
           ],
           { solverName: 'solvePH', expectedRegion: Region.Region3 },

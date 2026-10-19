@@ -30,7 +30,7 @@ export function detectRegionPT(p: number, T: number): Region | -1 {
 
 export function nativeSaturationTemperatureBracket(p: number): readonly [number, number] {
   let lower = C.T_MIN;
-  let upper = C.R2_T_MIN;
+  let upper = p > saturationPressure(C.R2_T_MIN) ? C.Tc : C.R2_T_MIN;
   while (true) {
     const middle = (lower + upper) / 2;
     if (middle === lower || middle === upper) break;

@@ -52,7 +52,9 @@ console.log(c.quality);     // 0.5
 
 All numeric inputs must be finite numbers.
 
-Results retain computed floating-point precision without decimal snapping. Backward solvers keep computed properties instead of overwriting them with input pressure, enthalpy, or entropy; compare recovered values with numerical tolerances. Region 3 PT inversion preserves input pressure after checking EOS convergence.
+Results retain computed floating-point precision without decimal snapping. Backward solvers keep computed properties instead of overwriting them with input pressure, enthalpy, or entropy; compare recovered values with numerical tolerances.
+
+Boundary normalization recomputes the single-phase equation of state (EOS) after adjusting pressure or temperature within tolerance. Region 3 PT inversion preserves input pressure once the relative EOS pressure residual meets `1e-12`.
 
 `solveTH(T, h)` and `solveTS(T, s)` require a unique solution in the supported IF97 range. Some pairs describe both compressed liquid and wet steam, or two compressed-liquid pressures on a non-monotonic isotherm. TS pairs can be ambiguous in low-temperature water, where the thermal expansion coefficient changes sign. Both solvers throw `AmbiguousStateError` for ambiguous pairs. If you know the pressure or vapor quality, use `solvePT(p, T)` or `solveTx(T, x)`.
 
@@ -60,7 +62,7 @@ At branch endpoints and isotherm extrema, `solveTH` uses an absolute enthalpy to
 
 At Region 1/3 (`623.15 K`), B23, and Region 2/5 (`1073.15 K`), backward solvers resolve fit overlaps using `solvePT`'s boundary ownership: Regions 1, 3, and 2, respectively (Region 2 at B23's `100 MPa` endpoint). Unique roots on either side remain valid.
 
-Fit gaps return a boundary equation-of-state result. Returned `enthalpy` and `entropy` can differ from the inputs by at most the local difference between boundary equations plus roundoff. HS checks both properties at the same boundary coordinate. These rules apply where both regions are valid; Region 5 ends at `50 MPa`.
+Backward solvers try valid states within numerical tolerance before returning a boundary EOS state for a fit gap. Returned `enthalpy` and `entropy` can differ from the inputs by at most the local difference between boundary equations plus roundoff. HS checks both properties at the same boundary coordinate. These rules apply where both regions are valid; Region 5 ends at `50 MPa`.
 
 ### Unified `solve()`
 
@@ -246,6 +248,8 @@ The exported `SaturationEndpoints` type has `pressure`, `temperature`, `liquid`,
 
 Near the critical point, the independently fitted Region 3 and Region 4 equations can lack a stable vapor root at the same saturation pressure and temperature. Saturation-state construction throws `IF97Error` when it cannot obtain distinct, stable liquid and vapor endpoints. This can occur inside the documented input bounds, for example at `p = 22.0639999 MPa`. See [IF97 section 10.2](https://iapws.org/technical-guidance/release/IF97-Rev.download) for the consistency limits between the saturation and single-phase equations.
 
+Near `623.15 K`, PH/PS preserve exact saturation endpoints but otherwise prefer superheated Region 2 roots selected by `solvePT` when their properties also match wet steam. Use `solvePx` or `solveTx` to specify saturation quality.
+
 Near 623.15 K, the independent Region 1/2 and Region 3 fits can yield two saturation states with the same enthalpy and entropy. `solveHS` returns one state that satisfies its equation of state (EOS) and both input constraints within the solver's tolerances. Its temperature and quality can differ from another valid solution.
 
 Near the triple-point liquid endpoint, HS inversion is ill-conditioned. `solveHS` can recover different temperature and quality values while meeting both input constraints within tolerance.
@@ -283,13 +287,17 @@ Transport-property limits are separate; see [Transport correlation limits](#tran
 The test suite covers:
 
 - Official IF97 verification tables (Regions 1–5)
-- Official IAPWS backward and supplementary-boundary check values (relative error `≤ 1e-8`), including all 26 Region 3 `v(p,T)` subregions
+- Official IAPWS backward and supplementary-boundary check values at their printed precision, including all 26 Region 3 `v(p,T)` subregions
 - Backward-equation round-trip accuracy
 - Temperature-led backward round trips (`TH` and `TS`)
 - High-pressure Region 4 regressions
 - IAPWS R11-24 ionization-constant verification values
 - Coverage thresholds enforced in CI and before packing or publishing
 - ASME and GB/T steam-table comparisons against published values
+
+Two test files check 156 distinct published backward and Region 3 outputs before EOS refinement. The absolute tolerance is `0.6 × 10^(floor(log10(abs(expected))) - n + 1)`, where `n` is the printed significant-digit count: nine for IF97 outputs and ten for supplementary releases. These checks do not verify every coefficient against its source table.
+
+These tests exclude the unimplemented SR3-03(2014) saturation boundaries `p3sat(h)` and `p3sat(s)` (Eqs. 10 and 11), and the IF97 B2bc enthalpy equation `h(p)` (Eq. 21).
 
 For a clean local verification run:
 

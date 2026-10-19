@@ -74,13 +74,13 @@ function isCriticalRegion4Entropy(s: number): boolean {
 }
 
 export function assertCriticalRegion4PHInput(p: number, h: number, solverName: string): void {
-  if (isRegion4CriticalPressure(p) && isCriticalRegion4Enthalpy(h)) {
+  if (p === C.Pc && isCriticalRegion4Enthalpy(h)) {
     throw new IF97Error(criticalPointMessage(solverName));
   }
 }
 
 export function assertCriticalRegion4PSInput(p: number, s: number, solverName: string): void {
-  if (isRegion4CriticalPressure(p) && isCriticalRegion4Entropy(s)) {
+  if (p === C.Pc && isCriticalRegion4Entropy(s)) {
     throw new IF97Error(criticalPointMessage(solverName));
   }
 }

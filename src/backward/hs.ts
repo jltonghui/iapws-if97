@@ -11,7 +11,7 @@ import type { BasicProperties } from '../types.js';
 import { Region, IF97Error, OutOfRangeError } from '../types.js';
 import { RegionMismatchError } from '../errors.js';
 import * as C from '../constants.js';
-import { assertFiniteNumber } from '../core/input-validation.js';
+import { assertFiniteNumber, withinClosedLowerBound } from '../core/input-validation.js';
 import { classifyRegionHS } from './hs-region.js';
 import { findHSSeam } from '../core/formulation-seams.js';
 import { solveHSInRegion, solveHSSeam } from './hs-state.js';
@@ -26,10 +26,10 @@ export function solveHS(h: number, s: number): BasicProperties {
   assertFiniteNumber('Enthalpy', h);
   assertFiniteNumber('Entropy', s);
 
-  if (h < C.H_MIN || h > C.H_MAX) {
+  if (!withinClosedLowerBound(h, C.H_MIN, 'enthalpy') || h > C.H_MAX) {
     throw new OutOfRangeError('Enthalpy', h, C.H_MIN, C.H_MAX);
   }
-  if (s < C.S_MIN || s > C.S_MAX) {
+  if (!withinClosedLowerBound(s, C.S_MIN, 'entropy') || s > C.S_MAX) {
     throw new OutOfRangeError('Entropy', s, C.S_MIN, C.S_MAX);
   }
   assertCriticalRegion4HSInput(h, s, 'solveHS');

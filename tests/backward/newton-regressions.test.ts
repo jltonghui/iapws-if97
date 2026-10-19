@@ -30,6 +30,9 @@ describe('analytic backward Newton regressions', () => {
     { name: 'Region 3 critical isobar below Tc', p: Pc, T: Tc - 0.001 },
     { name: 'Region 3 critical isobar above Tc', p: Pc, T: Tc + 0.001 },
     { name: 'Region 3 just above the Region 1 boundary', p: 20, T: 623.15 + 1e-7 },
+    { name: 'Region 3 dense liquid at 80 MPa', p: 80, T: 630 },
+    { name: 'Region 3 dense liquid near the lower boundary at 100 MPa', p: 100, T: 624 },
+    { name: 'Region 3 dense liquid at 100 MPa', p: 100, T: 630 },
     { name: 'Region 3 exact pressure ceiling', p: 100, T: 700 },
   ])('$name round-trips through PH and PS', ({ p, T }) => {
     const forward = solvePT(p, T);

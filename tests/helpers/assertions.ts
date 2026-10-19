@@ -9,6 +9,15 @@ export function expectDigitsClose(
   expect(Math.abs(actual - expected)).toBeLessThanOrEqual(tolerance);
 }
 
+export function expectPrintedValue(
+  actual: number,
+  expected: number,
+  significantDigits: number,
+): void {
+  const tolerance = 0.6 * 10 ** (Math.floor(Math.log10(Math.abs(expected))) - significantDigits + 1);
+  expect(Math.abs(actual - expected)).toBeLessThanOrEqual(tolerance);
+}
+
 export function expectRelativeClose(
   actual: number,
   expected: number,

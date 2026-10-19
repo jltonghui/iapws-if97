@@ -52,19 +52,19 @@ console.log(c.quality);     // 0.5
 
 All numeric inputs must be finite numbers.
 
-Results retain computed floating-point precision without decimal snapping. Backward solvers keep computed properties instead of overwriting them with input pressure, enthalpy, or entropy; compare recovered values with numerical tolerances.
+Results retain computed precision without decimal snapping. Backward solvers return computed pressure, enthalpy, and entropy; compare recovered values with numerical tolerances.
 
-Ordinary backward results match supplied enthalpy and entropy within `1e-9 × max(1, |input|)` in the respective units. Iteration tolerances, endpoint resolution, and the local fit-gap budgets below are separate.
+Ordinary backward results match enthalpy and entropy inputs within `1e-9 × max(1, |input|)` in the respective units. Iteration tolerances, endpoint resolution, and local fit-gap budgets are separate.
 
 Boundary normalization recomputes the single-phase equation of state (EOS) after adjusting pressure or temperature within tolerance. Region 3 PT inversion preserves input pressure once the relative EOS pressure residual meets `1e-12`.
 
-`solveTH(T, h)` and `solveTS(T, s)` require a unique solution in the supported IF97 range. Some pairs describe both compressed liquid and wet steam, or two compressed-liquid pressures on a non-monotonic isotherm. TS pairs can be ambiguous in low-temperature water, where the thermal expansion coefficient changes sign. Both solvers throw `AmbiguousStateError` for ambiguous pairs. If you know the pressure or vapor quality, use `solvePT(p, T)` or `solveTx(T, x)`.
+`solveTH(T, h)` and `solveTS(T, s)` throw `AmbiguousStateError` for multiple solutions in the supported IF97 range. A pair can match compressed liquid and wet steam, or two liquid pressures on a non-monotonic isotherm. Low-temperature TS ambiguity can occur where the thermal expansion coefficient changes sign. Use `solvePT(p, T)` or `solveTx(T, x)` when pressure or vapor quality is known.
 
-At branch endpoints and isotherm extrema, `solveTH` uses an absolute enthalpy tolerance of `1e-9 kJ/kg`, and `solveTS` uses an absolute entropy tolerance of `1e-12 kJ/(kg·K)`. Inputs within the respective tolerance match the endpoint or extremum. Pressure recovery near an extremum is ill-conditioned.
+At branch endpoints and isotherm extrema, inputs within `1e-9 kJ/kg` for `solveTH` or `1e-12 kJ/(kg·K)` for `solveTS` match that endpoint or extremum. Pressure recovery near an extremum is ill-conditioned.
 
 At Region 1/3 (`623.15 K`), B23, and Region 2/5 (`1073.15 K`), backward solvers resolve fit overlaps using `solvePT`'s boundary ownership: Regions 1, 3, and 2, respectively (Region 2 at B23's `100 MPa` endpoint). Unique roots on either side remain valid.
 
-PH/PS and HS validate candidates from both regions at formulation seams, then apply boundary ownership. If none succeeds, any numerical failure propagates. For confirmed fit gaps, returned `enthalpy` and `entropy` can differ from inputs by at most the local difference between boundary equations plus roundoff. HS checks both properties at the same boundary coordinate. Both regions must be valid; Region 5 ends at `50 MPa`.
+PH/PS and HS validate candidates from both regions, rechecking B23-normalized states before boundary ownership or a fit-gap fallback. If none succeeds, numerical failures propagate. In confirmed gaps, returned `enthalpy` and `entropy` can differ from inputs by at most the local difference between boundary equations plus roundoff. HS checks both properties at the same boundary coordinate. Both regions must be valid; Region 5 ends at `50 MPa`.
 
 ### Unified `solve()`
 
@@ -248,13 +248,13 @@ The exported `SaturationEndpoints` type has `pressure`, `temperature`, `liquid`,
 - The solvers do not return the exact critical point as a Region 4 state.
 - `solveTH(T, h)` and `solveTS(T, s)` reject inputs within `0.001 K` of the critical temperature.
 
-Near the critical point, the independently fitted Region 3 and Region 4 equations can lack a stable vapor root at the same saturation pressure and temperature. Saturation-state construction throws `IF97Error` when it cannot obtain distinct, stable liquid and vapor endpoints. This can occur inside the documented input bounds, for example at `p = 22.0639999 MPa`. See [IF97 section 10.2](https://iapws.org/technical-guidance/release/IF97-Rev.download) for the consistency limits between the saturation and single-phase equations.
+Near the critical point, the independent Region 3 and Region 4 fits can lack a stable vapor root at the same pressure and temperature. Saturation solvers throw `IF97Error` if they cannot obtain distinct, stable endpoints, even within the input bounds (for example, `p = 22.0639999 MPa`). See [IF97 section 10.2](https://iapws.org/technical-guidance/release/IF97-Rev.download) for consistency limits between the equations.
 
-Near `623.15 K`, PH/PS prefer Region 4 for targets within the saturation property span, including overlaps with PT-owned Region 2 roots. HS also prefers a valid saturation solution here. PH/PS can therefore map a PT-owned Region 2 state to Region 4; arbitrary PT round trips are not guaranteed. Use `solvePx` or `solveTx` to specify saturation quality.
+Near `623.15 K`, PH/PS prefer Region 4 within the saturation property span, including overlaps with PT-owned Region 2 roots. HS also prefers a valid saturation solution. A PT round trip can therefore change region. Use `solvePx` or `solveTx` to specify quality.
 
-PH/PS use the actual saturation endpoints at the supplied pressure. Targets outside that property span stay single phase, even within the former endpoint proximity tolerance.
+PH/PS use saturation endpoints at the supplied pressure. Targets outside that span retain PT-consistent single-phase roots, including at the saturation/B23 intersection and adjacent floating-point inputs.
 
-The independent Region 1/2 and Region 3 fits can yield two saturation states near this corner with the same enthalpy and entropy. `solveHS` returns one state satisfying its EOS and both input constraints within solver tolerances. Its temperature and quality need not match the source.
+The Region 1/2 and Region 3 fits can yield two saturation states near this corner with the same enthalpy and entropy. `solveHS` returns one satisfying its EOS and both inputs within tolerance. Its temperature and quality need not match the source.
 
 Near the triple-point liquid endpoint, HS inversion is ill-conditioned. `solveHS` can recover different temperature and quality values while meeting both input constraints within tolerance.
 

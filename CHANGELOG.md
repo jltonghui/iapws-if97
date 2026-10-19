@@ -17,27 +17,25 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Preserve PH/PS single-phase roots outside the actual saturation property span, including those near endpoints.
+- Preserve PT-consistent PH/PS single-phase roots outside the saturation property span, including the saturation/B23 intersection and adjacent floating-point inputs.
 - Recover HS Region 3 roots at `100 MPa` / `623.15 K` before rejecting the Region 1 upper envelope; reuse classification candidates.
-- Share PH/PS and HS seam validation and ownership selection. If no candidate succeeds, propagate numerical failures before any fit-gap fallback.
+- Revalidate PH/PS and HS candidates after B23 normalization, before any fit-gap fallback. Share seam validation and boundary ownership; propagate numerical failures if no candidate succeeds.
 - Preserve HS input constraints when projecting low-pressure saturation boundaries; filter invalid TH/TS candidates before resolving ambiguity.
-- Correct two transcribed coefficients in Region 1 and Region 3b `p(h,s)` equations, verified against official check values.
-- Correct nine more coefficient transcription errors in Region 3 `v(p,T)`, HS boundaries, `p(h,s)`, and Region 2a `T(p,h)`/`T(p,s)`. Public `region3Volume` results change; refined solver results can change in their last floating-point bits.
+- Correct 11 coefficient transcription errors in Region 1 and Region 3 `p(h,s)`, Region 3 `v(p,T)`, HS boundaries, and Region 2a `T(p,h)`/`T(p,s)`, checked against official values. Public `region3Volume` results change; refined solver results can differ in their last floating-point bits.
 - Refine Gibbs HS states to recover the minimum-pressure boundary with the existing acceptance tolerance.
 - Explain the triple-point lower bound in low-temperature saturation errors without changing `OutOfRangeError` or input bounds.
 - Compute `density` as `1 / specificVolume` from the returned volume.
 - Search all valid `TH`/`TS` branches, including non-monotonic isotherms and subcritical Region 3 vapor. Low-temperature `TS` inputs can match two liquid states and wet steam.
-- Throw `AmbiguousStateError` (an `IF97Error` subclass) from `solveTH`, `solveTS`, unified `TH`/`TS` modes, and `detectRegionTH`/`detectRegionTS` for multiple physical states. These could previously select a branch (wet steam for `TS`) or miss valid states. Unique solutions and shared saturation endpoints remain supported.
+- Throw `AmbiguousStateError` (an `IF97Error` subclass) from direct and unified `TH`/`TS` solvers and `detectRegionTH`/`detectRegionTS` for multiple states. These could previously select a branch (wet steam for `TS`) or miss states. Unique solutions and shared saturation endpoints remain supported.
 - Preserve input saturation pressure or temperature and use the correct region equation at `623.15 K`, including adjacent floating-point inputs.
 - Evaluate saturation pressure and temperature with extended precision to preserve monotonicity near region boundaries and reduce critical-region rounding errors.
 - Select Region 3 liquid/vapor branches using native saturation pressure to avoid phase changes from inverse-temperature rounding.
 - Retain low-order pressure terms in Region 3 density inversion and saturation-state construction.
-- Recover `TH`/`TS` roots just inside open branch endpoints with existing property tolerances. Use separate interior convergence tolerances to improve pressure recovery on nearly flat isotherms.
+- Recover `TH`/`TS` roots just inside open branch endpoints with existing property tolerances; use separate interior tolerances for pressure recovery on nearly flat isotherms.
 - Correct global enthalpy and entropy limits, computing upper limits from the Region 5 equation of state at module initialization to match runtime rounding.
 - Correct HS classification for cold liquids and at Region 1/3 and Region 2/5 boundaries; use computed saturation endpoints in the HS residual.
 - Preserve HS endpoint quality and single-phase properties when the endpoint EOS exactly reproduces input enthalpy and entropy.
 - Prefer PH/PS saturation states in Region 2 overlaps near `623.15 K`, preventing jumps for wet steam and rounded saturation endpoints.
-- Revalidate backward states before resolving B23 rounding.
 - Recompute single-phase EOS properties after backward pressure or temperature boundary normalization.
 - Tighten Region 3 PT pressure convergence to relative `1e-12` and use the shared relative `1e-9` pressure acceptance tolerance for PH/PS.
 - Throw `IF97Error` when near-critical calculations cannot construct the requested stable phase or distinct saturation endpoints.

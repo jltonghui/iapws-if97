@@ -3,6 +3,7 @@ import { NumericalStateError, RegionMismatchError } from '../errors.js';
 import { IF97Error, Region, type BasicProperties } from '../types.js';
 import {
   backwardCandidateError,
+  normalizeBackwardState,
   validateBackwardState,
   type BackwardConstraint,
 } from './solution-validation.js';
@@ -17,9 +18,13 @@ export function resolveBackwardCandidates(
   let failure: IF97Error | null = null;
   for (const attempt of attempts) {
     try {
-      const state = attempt();
+      let state = attempt();
       if (state !== null) {
-        const error = backwardCandidateError(state, constraints, options);
+        let error = backwardCandidateError(state, constraints, options);
+        if (error instanceof RegionMismatchError) {
+          state = normalizeBackwardState(state, constraints, options.solverName);
+          error = backwardCandidateError(state, constraints, options);
+        }
         if (error === null) candidates.push(state);
         else if (error instanceof NumericalStateError) failure ??= error;
       }

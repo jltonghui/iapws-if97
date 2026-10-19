@@ -17,7 +17,7 @@ import { region3ByRhoT, region3PressureResidual } from '../regions/region3.js';
 import { region5 } from '../regions/region5.js';
 import { saturationTemperature } from '../regions/region4.js';
 import { assertFiniteNumber, withinClosedLowerBound } from '../core/input-validation.js';
-import { assertPressurePropertyEnvelope, detectRegionPH, pressurePropertySeam } from './pressure-property-region.js';
+import { assertPressurePropertyEnvelope, detectRegionPH, pressurePropertyBoundaryState, pressurePropertySeam } from './pressure-property-region.js';
 import { newtonRaphson } from '../solvers/newton-raphson.js';
 import { bracketedNewton } from '../solvers/bracketed-newton.js';
 import { dampedNewton2D } from '../solvers/damped-newton-2d.js';
@@ -266,6 +266,10 @@ export function solvePH(p: number, h: number): BasicProperties {
       { label: 'pressure', expected: p },
       { label: 'enthalpy', expected: h },
     ], { solverName: 'solvePH', expectedRegion: seam.state.region, seam });
+  }
+  if (seam === null) {
+    const boundary = pressurePropertyBoundaryState(p, h, 'enthalpy');
+    if (boundary !== null) return boundary;
   }
 
   let region: Region | -1;

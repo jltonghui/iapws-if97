@@ -235,6 +235,19 @@ export function backwardCandidateError(
     regionConsistencyError(state, options.solverName, options.expectedRegion);
 }
 
+export function normalizeBackwardState(
+  state: BasicProperties,
+  constraints: readonly BackwardConstraint[],
+  solverName: string,
+): BasicProperties {
+  const computed = normalizeComputedPT(state);
+  return constraints.some(({ label }) => label === 'temperature')
+    ? computed
+    : normalizeSaturationState(
+      normalizeB23State(normalizeRegion3LowerState(computed)), constraints, solverName,
+    );
+}
+
 export function validateBackwardState(
   state: BasicProperties,
   constraints: readonly BackwardConstraint[],
@@ -251,12 +264,7 @@ export function validateBackwardState(
     : constraints;
   const initialError = constraintError(state, checkedConstraints, options.solverName);
   if (initialError !== null) throw initialError;
-  const computed = normalizeComputedPT(state);
-  const normalized = constraints.some(({ label }) => label === 'temperature')
-    ? computed
-    : normalizeSaturationState(
-      normalizeB23State(normalizeRegion3LowerState(computed)), checkedConstraints, options.solverName,
-    );
+  const normalized = normalizeBackwardState(state, checkedConstraints, options.solverName);
   const error = backwardCandidateError(normalized, checkedConstraints, options);
   if (error !== null) throw error;
   return normalized;

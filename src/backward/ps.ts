@@ -13,7 +13,7 @@ import { region2 } from '../regions/region2.js';
 import { region3ByRhoT, region3PressureResidual } from '../regions/region3.js';
 import { region5 } from '../regions/region5.js';
 import { assertFiniteNumber, withinClosedLowerBound } from '../core/input-validation.js';
-import { assertPressurePropertyEnvelope, detectRegionPS, pressurePropertySeam } from './pressure-property-region.js';
+import { assertPressurePropertyEnvelope, detectRegionPS, pressurePropertyBoundaryState, pressurePropertySeam } from './pressure-property-region.js';
 import { newtonRaphson } from '../solvers/newton-raphson.js';
 import { bracketedNewton } from '../solvers/bracketed-newton.js';
 import { dampedNewton2D } from '../solvers/damped-newton-2d.js';
@@ -232,6 +232,10 @@ export function solvePS(p: number, s: number): BasicProperties {
       { label: 'pressure', expected: p },
       { label: 'entropy', expected: s },
     ], { solverName: 'solvePS', expectedRegion: seam.state.region, seam });
+  }
+  if (seam === null) {
+    const boundary = pressurePropertyBoundaryState(p, s, 'entropy');
+    if (boundary !== null) return boundary;
   }
 
   let region: Region | -1;

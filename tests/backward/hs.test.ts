@@ -7,6 +7,7 @@ import { detectRegionHS } from '../../src/detect.js';
 import { Region, OutOfRangeError } from '../../src/types.js';
 import { solveHS } from '../../src/backward/hs.js';
 import { solvePx } from '../../src/saturation/two-phase.js';
+import { solvePT } from '../../src/core/solver.js';
 import { expectBackwardValue, expectRegion4RoundTrip } from '../helpers/backward-assertions.js';
 
 describe('detectRegionHS', () => {
@@ -64,6 +65,21 @@ describe('detectRegionHS', () => {
 });
 
 describe('solveHS backward equations', () => {
+  it.each([
+    [2605.5950266108721, 5.0992220574005964],
+    [2659.4987808495353, 5.0488514477482447],
+  ])('preserves an exact Region 2 root near B23 for h=%s, s=%s', (h, s) => {
+    const state = solveHS(h, s);
+    const native = solvePT(state.pressure, state.temperature);
+
+    expect(state.region).toBe(Region.Region2);
+    expect(native.region).toBe(Region.Region2);
+    expect(state.enthalpy).toBe(native.enthalpy);
+    expect(state.entropy).toBe(native.entropy);
+    expect(Math.abs(state.enthalpy - h)).toBeLessThan(1e-8);
+    expect(Math.abs(state.entropy - s)).toBeLessThan(1e-11);
+  });
+
   it('R1: round-trip at T=300K, P=3MPa', () => {
     const fwd = region1(3, 300);
     const back = solveHS(fwd.enthalpy, fwd.entropy);

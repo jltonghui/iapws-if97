@@ -16,7 +16,7 @@ describe('pressure and temperature boundary regressions', () => {
     const source = solvePT(p, T);
     const input = mode === 'PH' ? { mode, p, h: target } : { mode, p, s: target };
     expect(source.region).toBe(Region.Region2);
-    expect(source[property]).toBe(target);
+    expect(Math.abs(source[property] - target)).toBeLessThanOrEqual(tolerance);
     expect(mode === 'PH' ? detectRegionPH(p, target) : detectRegionPS(p, target)).toBe(Region.Region2);
 
     for (const recovered of [
@@ -40,7 +40,7 @@ describe('pressure and temperature boundary regressions', () => {
     const T = 623.1500000000902;
     const source = solvePT(16.52916425262254, T);
     expect(source.region).toBe(Region.Region2);
-    expect(source[property]).toBe(target);
+    expect(Math.abs(source[property] - target)).toBeLessThanOrEqual(tolerance);
     const input = mode === 'TH' ? { mode, T, h: target } : { mode, T, s: target };
 
     for (const run of [

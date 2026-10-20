@@ -3,8 +3,8 @@
  *
  * A hybrid root-finder that combines Newton-Raphson steps with bisection
  * fallback. The bracket [lower, upper] is maintained so that f(a) and f(b)
- * have opposite signs, guaranteeing convergence even when the Newton step
- * would overshoot or the derivative estimate is poor.
+ * have opposite signs. A stagnation safeguard forces bisection when two
+ * iterations fail to halve the bracket.
  */
 import { ConvergenceError, IF97Error } from '../types.js';
 
@@ -45,7 +45,8 @@ function numericalDerivative(
  *
  * Each iteration attempts a Newton step using the supplied analytical derivative,
  * or a central difference when none is supplied. If the Newton candidate falls
- * outside the current bracket, a bisection step is used instead.
+ * outside the current bracket, or two iterations fail to halve its width,
+ * a bisection step is used instead.
  *
  * @param f            - Continuous function whose root is sought
  * @param lower        - Lower bound of the bracket
@@ -84,6 +85,8 @@ export function bracketedNewton(
   if (!(x > a && x < b)) {
     x = (a + b) / 2;
   }
+  let previousWidth = b - a;
+  let widthTwoStepsAgo = previousWidth;
 
   for (let iter = 0; iter < maxIterations; iter++) {
     const fx = f(x);
@@ -113,9 +116,12 @@ export function bracketedNewton(
       ? NaN
       : x - fx / derivative;
 
-    x = Number.isFinite(newtonCandidate) && newtonCandidate > a && newtonCandidate < b
+    const sufficientProgress = iter === 0 || b - a <= widthTwoStepsAgo / 2;
+    x = sufficientProgress && Number.isFinite(newtonCandidate) && newtonCandidate > a && newtonCandidate < b
       ? newtonCandidate
       : midpoint;
+    widthTwoStepsAgo = previousWidth;
+    previousWidth = b - a;
   }
 
   throw new ConvergenceError('bracketedNewton', maxIterations);

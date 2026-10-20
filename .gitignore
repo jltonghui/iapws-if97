@@ -144,4 +144,5 @@ vite.config.ts.timestamp-*
 # Project artifacts
 coverage/
 .DS_Store
-docs/
+docs/*
+!docs/reference.md

@@ -77,4 +77,14 @@ describe('bracketedNewton', () => {
     const root = bracketedNewton((x) => x - 3, 10, 0, 5);
     expectDigitsClose(root, 3, 9);
   });
+
+  it.each([1 / 3, 2 / 3])('bisects when quantized residuals stall Newton steps toward x=%s', (expected) => {
+    const root = bracketedNewton((x) => x < expected ? -1e-12 : 1e-12, 0, 1, 0.5, {
+      derivative: () => 1,
+      tolerance: 1e-9,
+      residualTolerance: 0,
+    });
+
+    expect(Math.abs(root - expected)).toBeLessThanOrEqual(1e-9);
+  });
 });

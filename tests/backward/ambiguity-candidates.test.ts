@@ -60,6 +60,18 @@ function expectCandidates(
 afterEach(() => vi.restoreAllMocks());
 
 describe('TH/TS ambiguity candidates', () => {
+  it.each([
+    { T: 273.1600029526973, target: 0.0031251536388218846, property: 'enthalpy' as const, run: solveTH },
+    { T: 273.16000000000003, target: -5.7680898450834417e-8, property: 'entropy' as const, run: solveTS },
+  ])('preserves ambiguity for quantized $property near the triple point', ({ T, target, property, run }) => {
+    const { candidates } = ambiguity(() => run(T, target));
+
+    expect(candidates.map(({ region }) => region)).toEqual(property === 'enthalpy'
+      ? [Region.Region4, Region.Region1]
+      : [Region.Region4, Region.Region1, Region.Region1]);
+    expectCandidates(candidates, T, target, property);
+  });
+
   it('lists liquid and wet candidates through every public TH entry point', () => {
     const wet = solveTx(473.15, 0.001);
     const T = wet.temperature;
